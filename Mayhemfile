@@ -1,0 +1,5 @@
+project: asteria
+target: asteria
+
+cmds:
+  - cmd: /repo/bin/.libs/asteria @@
