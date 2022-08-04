@@ -17,6 +17,7 @@
 #include <functional>  // std::hash<>, std::equal_to<>
 #include <tuple>  // std::tuple<>
 #include <stdexcept>  // standard exceptions...
+#include <memory>  // std::unqiue_ptr, std::shared_ptr
 #include <cstring>  // std::memset()
 #include <cstddef>  // std::size_t, std::ptrdiff_t
 
@@ -73,6 +74,7 @@ using ::std::add_volatile;
 using ::std::remove_volatile;
 using ::std::add_cv;
 using ::std::remove_cv;
+using ::std::is_pointer;
 using ::std::is_reference;
 using ::std::is_lvalue_reference;
 using ::std::is_rvalue_reference;
@@ -254,12 +256,32 @@ min(lhsT&& lhs, rhsT&& rhs)
     return (rhs < lhs) ? ::std::forward<rhsT>(rhs) : ::std::forward<lhsT>(lhs);
   }
 
+template<typename lhsT, typename rhsT, typename... restT>
+constexpr
+decltype(noadl::min(noadl::min(::std::declval<lhsT&&>(), ::std::declval<rhsT&&>()),
+                    ::std::declval<restT&&>()...))
+min(lhsT&& lhs, rhsT&& rhs, restT&&... rest)
+  {
+    return noadl::min(noadl::min(::std::forward<lhsT>(lhs), ::std::forward<rhsT>(rhs)),
+                      ::std::forward<restT>(rest)...);
+  }
+
 template<typename lhsT, typename rhsT>
 constexpr
 typename select_type<lhsT&&, rhsT&&>::type
 max(lhsT&& lhs, rhsT&& rhs)
   {
     return (lhs < rhs) ? ::std::forward<rhsT>(rhs) : ::std::forward<lhsT>(lhs);
+  }
+
+template<typename lhsT, typename rhsT, typename... restT>
+constexpr
+decltype(noadl::max(noadl::max(::std::declval<lhsT&&>(), ::std::declval<rhsT&&>()),
+                    ::std::declval<restT&&>()...))
+max(lhsT&& lhs, rhsT&& rhs, restT&&... rest)
+  {
+    return noadl::max(noadl::max(::std::forward<lhsT>(lhs), ::std::forward<rhsT>(rhs)),
+                      ::std::forward<restT>(rest)...);
   }
 
 template<typename xvT, typename loT, typename upT>

@@ -11,8 +11,7 @@
 
 namespace rocket {
 
-template<typename charT,
-         typename traitsT = char_traits<charT>>
+template<typename charT, typename traitsT = char_traits<charT>>
 class basic_tinyfmt;
 
 /* Differences from `std::basic_ostream`:
@@ -63,32 +62,44 @@ class basic_tinyfmt
     // unformatted output functions
     basic_tinyfmt&
     flush()
-      { this->get_tinybuf().flush();
-        return *this;  }
+      {
+        this->get_tinybuf().flush();
+        return *this;
+      }
 
     off_type
     tell() const
-      { return this->get_tinybuf().tell();  }
+      {
+        return this->get_tinybuf().tell();
+      }
 
     basic_tinyfmt&
     seek(off_type off, seek_dir dir = tinybuf_base::seek_set)
-      { this->get_tinybuf().seek(off, dir);
-        return *this;  }
+      {
+        this->get_tinybuf().seek(off, dir);
+        return *this;
+      }
 
     basic_tinyfmt&
     putc(char_type c)
-      { this->get_tinybuf().putc(c);
-        return *this;  }
+      {
+        this->get_tinybuf().putc(c);
+        return *this;
+      }
 
     basic_tinyfmt&
     putn(const char_type* s, size_type n)
-      { this->get_tinybuf().putn(s, n);
-        return *this;  }
+      {
+        this->get_tinybuf().putn(s, n);
+        return *this;
+      }
 
     basic_tinyfmt&
     puts(const char_type* s)
-      { this->get_tinybuf().puts(s);
-        return *this;  }
+      {
+        this->get_tinybuf().puts(s);
+        return *this;
+      }
   };
 
 template<typename charT, typename traitsT>
@@ -179,6 +190,22 @@ ROCKET_ENABLE_IF(is_base_of<exception, typename remove_cv<valueT>::type>::value)
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const valueT& value)
   { return fmt << value.what() << "\n[exception class `" << typeid(value) << "`]";  }
+
+// std support
+template<typename charT, typename traitsT, typename ytraitsT, typename yallocT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::basic_string<charT, ytraitsT, yallocT>& str)
+  { return fmt.putn(str.data(), str.size());  }
+
+template<typename charT, typename traitsT, typename elementT, typename deleteT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::unique_ptr<elementT, deleteT>& ptr)
+  { return fmt << ptr.get();  }
+
+template<typename charT, typename traitsT, typename elementT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::shared_ptr<elementT>& ptr)
+  { return fmt << ptr.get();  }
 
 // rvalue inserter
 template<typename charT, typename traitsT, typename xvalueT>

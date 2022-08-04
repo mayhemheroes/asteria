@@ -6,6 +6,7 @@
 
 #include "fwd.hpp"
 #include "details/value.ipp"
+#include <cmath>
 
 namespace asteria {
 
@@ -59,8 +60,10 @@ class Value
     operator=(XValT&& xval)
       noexcept(::std::is_nothrow_assignable<decltype(m_stor)&,
                         typename details_value::Valuable<XValT>::via_type&&>::value)
-      { details_value::Valuable<XValT>::assign(this->m_stor, ::std::forward<XValT>(xval));
-        return *this;  }
+      {
+        details_value::Valuable<XValT>::assign(this->m_stor, ::std::forward<XValT>(xval));
+        return *this;
+      }
 
     Value(const Value& other) noexcept
       : m_stor(other.m_stor)
@@ -68,8 +71,10 @@ class Value
 
     Value&
     operator=(const Value& other) noexcept
-      { this->m_stor = other.m_stor;
-        return *this;  }
+      {
+        this->m_stor = other.m_stor;
+        return *this;
+      }
 
     Value(Value&& other) noexcept
       {
@@ -80,7 +85,10 @@ class Value
 
     Value&
     operator=(Value&& other) noexcept
-      { return this->swap(other);  }
+      {
+        this->swap(other);
+        return *this;
+      }
 
     Value&
     swap(Value& other) noexcept
@@ -367,9 +375,10 @@ class Value
           static_assert(compare_less == 2);
           static_assert(compare_equal == 3);
 
-          return static_cast<Compare>(
-              ::std::islessequal(this->as_real(), other.as_real()) * 2 +
-              ::std::isgreaterequal(this->as_real(), other.as_real()));
+          int comp = ::std::islessequal(this->as_real(), other.as_real());
+          comp <<= 1;
+          comp |= ::std::isgreaterequal(this->as_real(), other.as_real());
+          return static_cast<Compare>(comp);
         }
 
         // Non-arithmetic values of different types can't be compared.

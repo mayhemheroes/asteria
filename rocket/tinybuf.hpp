@@ -144,40 +144,58 @@ class basic_tinybuf
 
     basic_tinybuf&
     flush()
-      { this->do_flush();
-        return *this;  }
+      {
+        this->do_flush();
+        return *this;
+      }
 
     off_type
     tell() const
-      { return this->do_tell();  }
+      {
+        return this->do_tell();
+      }
 
     basic_tinybuf&
     seek(off_type off, seek_dir dir = seek_set)
-      { this->do_seek(off, dir);
-        return *this;  }
+      {
+        this->do_seek(off, dir);
+        return *this;
+      }
 
     size_type
     getn(char_type* s, size_type n)
-      { return this->do_getn(s, n);  }
+      {
+        return this->do_getn(s, n);
+      }
 
     int_type
     getc()
-      { return this->do_getc();  }
+      {
+        return this->do_getc();
+      }
 
     basic_tinybuf&
     putn(const char_type* s, size_type n)
-      { this->do_putn(s, n);
-        return *this;  }
+      {
+        this->do_putn(s, n);
+        return *this;
+      }
 
     basic_tinybuf&
     putc(char_type c)
-      { this->do_putc(c);
-        return *this;  }
+      {
+        this->do_putc(c);
+        return *this;
+      }
 
     basic_tinybuf&
     puts(const char_type* s)
-      { this->do_putn(s, traits_type::length(s));
-        return *this;  }
+      {
+        static constexpr char_type xnull[] = { '(','n','u','l','l',')',0 };
+        const char_type* p = s ? s : xnull;
+        this->do_putn(p, traits_type::length(p));
+        return *this;
+      }
   };
 
 template<typename charT, typename traitsT>

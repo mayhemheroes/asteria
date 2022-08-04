@@ -379,8 +379,7 @@ struct Prefix_Comparator
     template<typename ElementT>
     bool
     operator()(const ElementT& lhs, const ElementT& rhs) const noexcept
-      { return ::rocket::char_traits<char>::compare(
-                   lhs.str, rhs.str, ::rocket::size(lhs.str)) < 0;  }
+      { return ::rocket::char_traits<char>::compare(lhs.str, rhs.str, ::rocket::size(lhs.str)) < 0;  }
 
     template<typename ElementT>
     bool
@@ -870,7 +869,7 @@ reload(const cow_string& file, int start_line, tinybuf&& cbuf)
     if(bcomm)
       throw Compiler_Error(Compiler_Error::M_format(),
                 compiler_status_block_comment_unclosed, reader.tell(),
-                "block comment unclosed\n[unmatched `/*` at '$1']", *bcomm);
+                "Block comment unclosed\n[unmatched `/*` at '$1']", *bcomm);
 
     // Reverse the token sequence and accept it.
     ::std::reverse(tokens.mut_begin(), tokens.mut_end());

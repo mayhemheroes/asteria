@@ -147,39 +147,51 @@ class refcnt_ptr
 
     refcnt_ptr&
     operator=(nullptr_t) noexcept
-      { this->reset();
-        return *this;  }
+      {
+        this->reset();
+        return *this;
+      }
 
     template<typename yelementT,
     ROCKET_ENABLE_IF(is_convertible<typename refcnt_ptr<yelementT>::pointer,
                                     pointer>::value)>
     refcnt_ptr&
     operator=(const refcnt_ptr<yelementT>& other) noexcept
-      { this->reset(other.m_sth.fork());
-        return *this;  }
+      {
+        this->reset(other.m_sth.fork());
+        return *this;
+      }
 
     template<typename yelementT,
     ROCKET_ENABLE_IF(is_convertible<typename refcnt_ptr<yelementT>::pointer,
                                     pointer>::value)>
     refcnt_ptr&
     operator=(refcnt_ptr<yelementT>&& other) noexcept
-      { this->reset(other.m_sth.release());
-        return *this;  }
+      {
+        this->reset(other.m_sth.release());
+        return *this;
+      }
 
     refcnt_ptr&
     operator=(const refcnt_ptr& other) noexcept
-      { this->reset(other.m_sth.fork());
-        return *this;  }
+      {
+        this->reset(other.m_sth.fork());
+        return *this;
+      }
 
     refcnt_ptr&
     operator=(refcnt_ptr&& other) noexcept
-      { this->reset(other.m_sth.release());
-        return *this;  }
+      {
+        this->reset(other.m_sth.release());
+        return *this;
+      }
 
     refcnt_ptr&
     swap(refcnt_ptr& other) noexcept
-      { this->m_sth.exchange_with(other.m_sth);
-        return *this;  }
+      {
+        this->m_sth.exchange_with(other.m_sth);
+        return *this;
+      }
 
   public:
     // 23.11.1.2.4, observers
@@ -318,8 +330,12 @@ inline
 refcnt_ptr<targetT>
 static_pointer_cast(const refcnt_ptr<sourceT>& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(sptr,
-               [](sourceT* ptr) { return static_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(static_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    dptr->details_refcnt_ptr::refcnt_cJveMKH5bI7L::add_reference();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -327,8 +343,12 @@ inline
 refcnt_ptr<targetT>
 dynamic_pointer_cast(const refcnt_ptr<sourceT>& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(sptr,
-               [](sourceT* ptr) { return dynamic_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(dynamic_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    dptr->details_refcnt_ptr::refcnt_cJveMKH5bI7L::add_reference();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -336,8 +356,12 @@ inline
 refcnt_ptr<targetT>
 const_pointer_cast(const refcnt_ptr<sourceT>& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(sptr,
-               [](sourceT* ptr) { return const_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(const_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    dptr->details_refcnt_ptr::refcnt_cJveMKH5bI7L::add_reference();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -345,8 +369,12 @@ inline
 refcnt_ptr<targetT>
 static_pointer_cast(refcnt_ptr<sourceT>&& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return static_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(static_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -354,8 +382,12 @@ inline
 refcnt_ptr<targetT>
 dynamic_pointer_cast(refcnt_ptr<sourceT>&& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return dynamic_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(dynamic_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -363,8 +395,12 @@ inline
 refcnt_ptr<targetT>
 const_pointer_cast(refcnt_ptr<sourceT>&& sptr) noexcept
   {
-    return details_refcnt_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return const_cast<targetT*>(ptr);  });
+    refcnt_ptr<targetT> dptr(const_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 }  // namespace rocket

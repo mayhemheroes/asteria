@@ -8,7 +8,9 @@
 namespace asteria {
 namespace details_utils {
 
-extern const uint8_t cmask_table[128];
+extern const uint8_t cmask_table[];
+extern const char ctrl_char_names[][8];
+extern const char char_escapes[][8];
 
 struct Quote_Wrapper
   {

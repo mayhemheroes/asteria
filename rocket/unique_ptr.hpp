@@ -58,10 +58,8 @@ class unique_ptr
       { }
 
     template<typename yelementT, typename ydeleterT,
-    ROCKET_ENABLE_IF(is_convertible<typename unique_ptr<yelementT, ydeleterT>::pointer,
-                                    pointer>::value),
-    ROCKET_ENABLE_IF(is_constructible<deleter_type, typename unique_ptr<yelementT,
-                                      ydeleterT>::deleter_type&&>::value)>
+    ROCKET_ENABLE_IF(is_convertible<typename unique_ptr<yelementT, ydeleterT>::pointer, pointer>::value),
+    ROCKET_ENABLE_IF(is_constructible<deleter_type, typename unique_ptr<yelementT, ydeleterT>::deleter_type&&>::value)>
     unique_ptr(unique_ptr<yelementT, ydeleterT>&& other) noexcept
       : m_sth(other.m_sth.release(), ::std::move(other.m_sth.as_deleter()))
       { }
@@ -77,26 +75,30 @@ class unique_ptr
     // 23.11.1.2.3, assignment
     unique_ptr&
     operator=(unique_ptr&& other) noexcept
-      { this->m_sth.as_deleter() = ::std::move(other.m_sth.as_deleter());
+      {
+        this->m_sth.as_deleter() = ::std::move(other.m_sth.as_deleter());
         this->reset(other.m_sth.release());
-        return *this;  }
+        return *this;
+      }
 
     template<typename yelementT, typename ydeleterT,
-    ROCKET_ENABLE_IF(is_convertible<typename unique_ptr<yelementT, ydeleterT>::pointer,
-                                    pointer>::value),
-    ROCKET_ENABLE_IF(is_assignable<deleter_type&, typename unique_ptr<yelementT,
-                                   ydeleterT>::deleter_type&&>::value)>
+    ROCKET_ENABLE_IF(is_convertible<typename unique_ptr<yelementT, ydeleterT>::pointer, pointer>::value),
+    ROCKET_ENABLE_IF(is_assignable<deleter_type&, typename unique_ptr<yelementT, ydeleterT>::deleter_type&&>::value)>
     unique_ptr&
     operator=(unique_ptr<yelementT, ydeleterT>&& other) noexcept
-      { this->m_sth.as_deleter() = ::std::move(other.m_sth.as_deleter());
+      {
+        this->m_sth.as_deleter() = ::std::move(other.m_sth.as_deleter());
         this->reset(other.m_sth.release());
-        return *this;  }
+        return *this;
+      }
 
     unique_ptr&
     swap(unique_ptr& other) noexcept
-      { noadl::xswap(this->m_sth.as_deleter(), other.m_sth.as_deleter());
+      {
+        noadl::xswap(this->m_sth.as_deleter(), other.m_sth.as_deleter());
         this->m_sth.exchange_with(other.m_sth);
-        return *this;  }
+        return *this;
+      }
 
   public:
     // 23.11.1.2.4, observers
@@ -245,8 +247,12 @@ inline
 unique_ptr<targetT>
 static_pointer_cast(unique_ptr<sourceT>&& sptr) noexcept
   {
-    return details_unique_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return static_cast<targetT*>(ptr);  });
+    unique_ptr<targetT> dptr(static_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -254,8 +260,12 @@ inline
 unique_ptr<targetT>
 dynamic_pointer_cast(unique_ptr<sourceT>&& sptr) noexcept
   {
-    return details_unique_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return dynamic_cast<targetT*>(ptr);  });
+    unique_ptr<targetT> dptr(dynamic_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 template<typename targetT, typename sourceT>
@@ -263,8 +273,12 @@ inline
 unique_ptr<targetT>
 const_pointer_cast(unique_ptr<sourceT>&& sptr) noexcept
   {
-    return details_unique_ptr::pointer_cast_aux<targetT>(::std::move(sptr),
-               [](sourceT* ptr) { return const_cast<targetT*>(ptr);  });
+    unique_ptr<targetT> dptr(const_cast<targetT*>(sptr.get()));
+    if(!dptr)
+      return dptr;
+
+    sptr.release();
+    return dptr;
   }
 
 }  // namespace rocket
