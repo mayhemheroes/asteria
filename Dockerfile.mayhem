@@ -12,5 +12,5 @@ RUN make install
 
 FROM ubuntu:20.04 as package
 RUN apt-get update
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y libedit-dev
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y libedit-dev libssl-dev
 COPY --from=builder /install /install
