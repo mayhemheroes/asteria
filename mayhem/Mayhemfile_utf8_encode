@@ -1,0 +1,8 @@
+project: asteria
+target: utf8-encode
+
+cmds:
+  - cmd: /fuzz_utf8_encode
+    libfuzzer: true
+    env:
+      ASAN_OPTIONS: detect_leaks=0
