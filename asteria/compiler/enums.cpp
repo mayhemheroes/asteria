@@ -160,10 +160,10 @@ stringify_punctuator(Punctuator punct) noexcept
       case punctuator_colon:
         return ":";
 
-      case punctuator_semicol: {
+      case punctuator_semicol:
         return ";";
-      }
-      case punctuator_spaceship:
+
+      case punctuator_cmp_3way:
         return "<=>";
 
       case punctuator_coales:
@@ -189,6 +189,9 @@ stringify_punctuator(Punctuator punct) noexcept
 
       case punctuator_random:
         return "[?]";
+
+      case punctuator_cmp_un:
+        return "</>";
 
       default:
         return "[unknown punctuator]";

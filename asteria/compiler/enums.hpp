@@ -62,7 +62,7 @@ enum Punctuator : uint8_t
     punctuator_comma       = 48,  // ,
     punctuator_colon       = 49,  // :
     punctuator_semicol     = 50,  // ;
-    punctuator_spaceship   = 51,  // <=>
+    punctuator_cmp_3way    = 51,  // <=>
     punctuator_coales      = 52,  // ??
     punctuator_coales_eq   = 53,  // ??=
     punctuator_ellipsis    = 54,  // ...
@@ -71,6 +71,7 @@ enum Punctuator : uint8_t
     punctuator_arrow       = 57,  // ->
     punctuator_scope       = 58,  // ::
     punctuator_random      = 59,  // [?]
+    punctuator_cmp_un      = 60,  // </>
   };
 
 ROCKET_CONST
