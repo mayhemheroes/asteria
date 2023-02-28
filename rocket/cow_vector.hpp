@@ -61,8 +61,7 @@ class cow_vector
     // 26.3.11.2, construct/copy/destroy
     explicit constexpr
     cow_vector(const allocator_type& alloc) noexcept
-      : m_sth(alloc)
-      { }
+      : m_sth(alloc)  { }
 
     cow_vector(const cow_vector& other) noexcept
       : m_sth(allocator_traits<allocator_type>::select_on_container_copy_construction(
@@ -83,8 +82,7 @@ class cow_vector
 
     constexpr
     cow_vector() noexcept(is_nothrow_constructible<allocator_type>::value)
-      : cow_vector(allocator_type())
-      { }
+      : cow_vector(allocator_type())  { }
 
     explicit
     cow_vector(size_type n, const allocator_type& alloc = allocator_type())
@@ -828,7 +826,9 @@ template<typename valueT, typename allocT>
 inline
 void
 swap(cow_vector<valueT, allocT>& lhs, cow_vector<valueT, allocT>& rhs) noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace rocket
 #endif

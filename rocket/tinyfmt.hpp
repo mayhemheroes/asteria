@@ -8,6 +8,7 @@
 #include "throw.hpp"
 #include "tinybuf.hpp"
 #include "ascii_numput.hpp"
+#include <chrono>
 namespace rocket {
 
 template<typename charT, typename traitsT = char_traits<charT>>
@@ -100,18 +101,15 @@ class basic_tinyfmt
 template<typename charT, typename traitsT>
 basic_tinyfmt<charT, traitsT>::
 ~basic_tinyfmt()
-  { }
+  {
+  }
 
-extern
-template
-class basic_tinyfmt<char>;
+using tinyfmt     = basic_tinyfmt<char>;
+using wtinyfmt    = basic_tinyfmt<wchar_t>;
+using u16tinyfmt  = basic_tinyfmt<char16_t>;
+using u32tinyfmt  = basic_tinyfmt<char32_t>;
 
-extern
-template
-class basic_tinyfmt<wchar_t>;
-
-using tinyfmt   = basic_tinyfmt<char>;
-using wtinyfmt  = basic_tinyfmt<wchar_t>;
+extern template class basic_tinyfmt<char>;
 
 // zero-conversion inserters
 template<typename charT, typename traitsT>
@@ -161,242 +159,173 @@ ROCKET_ENABLE_IF(is_arithmetic<valueT>::value),
 ROCKET_DISABLE_IF(is_same<const volatile valueT, const volatile charT>::value)>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, valueT value)
-  { return fmt << ascii_numput(value);  }
+  {
+    ascii_numput nump;
+    nump.put(value);
+    return fmt << nump;
+  }
 
 template<typename charT, typename traitsT, typename valueT,
 ROCKET_ENABLE_IF(is_enum<valueT>::value)>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, valueT value)
-  { return fmt << ascii_numput(static_cast<typename underlying_type<valueT>::type>(value));  }
+  {
+    ascii_numput nump;
+    nump.put(static_cast<typename underlying_type<valueT>::type>(value));
+    return fmt << nump;
+  }
 
 template<typename charT, typename traitsT, typename valueT,
 ROCKET_DISABLE_IF(is_convertible<valueT*, const charT*>::value)>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, valueT* value)
-  { return fmt << ascii_numput(reinterpret_cast<const void*>(value));  }
+  {
+    ascii_numput nump;
+    nump.put(reinterpret_cast<const void*>(value));
+    return fmt << nump;
+  }
 
 template<typename charT, typename traitsT>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const type_info& value)
-  { return fmt << value.name();  }
+  {
+    return fmt << value.name();
+  }
 
 template<typename charT, typename traitsT, typename valueT,
 ROCKET_ENABLE_IF(is_base_of<exception, typename remove_cv<valueT>::type>::value)>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const valueT& value)
-  { return fmt << value.what() << "\n[exception class `" << typeid(value) << "`]";  }
+  {
+    return fmt << value.what() << "\n[exception class `" << typeid(value) << "`]";
+  }
 
 // std support
 template<typename charT, typename traitsT, typename ytraitsT, typename yallocT>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::basic_string<charT, ytraitsT, yallocT>& str)
-  { return fmt.putn(str.data(), str.size());  }
+  {
+    return fmt.putn(str.data(), str.size());
+  }
 
 template<typename charT, typename traitsT, typename elementT, typename deleteT>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::unique_ptr<elementT, deleteT>& ptr)
-  { return fmt << ptr.get();  }
+  {
+    return fmt << ptr.get();
+  }
 
 template<typename charT, typename traitsT, typename elementT>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::shared_ptr<elementT>& ptr)
-  { return fmt << ptr.get();  }
+  {
+    return fmt << ptr.get();
+  }
 
 // rvalue inserter
 template<typename charT, typename traitsT, typename xvalueT>
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>&& fmt, xvalueT&& xvalue)
-  { return fmt << ::std::forward<xvalueT>(xvalue);  }
+  {
+    return fmt << ::std::forward<xvalueT>(xvalue);
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, char);
+// ... stupid English, stupid inflection.
+#define ROCKET_TINYFMT_NOUN_IRREGULAR(num, sing, pl)   ((((num) > 0) && ((num) <= 1)) ? (sing) : (pl))
+#define ROCKET_TINYFMT_NOUN_REGULAR(num, sing)         ROCKET_TINYFMT_NOUN_IRREGULAR(num, sing, sing "s")
+#define ROCKET_TINYFMT_NOUN_SAME_PLURAL(num, sing)     ROCKET_TINYFMT_NOUN_IRREGULAR(num, sing, sing)
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, const char*);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<1, 1000000000>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " nanosecond");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, const ascii_numput&);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<1, 1000000>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " microsecond");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, signed char);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<1, 1000>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " millisecond");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, signed short);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<1>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " second");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, signed);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<60>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " minute");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, signed long);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<3600>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " hour");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, signed long long);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<86400>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " day");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, unsigned char);
+template<typename charT, typename traitsT, typename repT>
+basic_tinyfmt<charT, traitsT>&
+operator<<(basic_tinyfmt<charT, traitsT>& fmt, const ::std::chrono::duration<repT, ::std::ratio<604800>>& dur)
+  {
+    return fmt << dur.count() << ROCKET_TINYFMT_NOUN_REGULAR(dur.count(), " week");
+  }
 
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, unsigned short);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, unsigned);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, unsigned long);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, unsigned long long);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, float);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, double);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, const void*);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, void*);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, const type_info&);
-
-extern
-template
-tinyfmt&
-operator<<(tinyfmt&, const exception&);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, wchar_t);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, const wchar_t*);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, const ascii_numput&);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, signed char);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, signed short);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, signed);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, signed long);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, signed long long);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, unsigned char);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, unsigned short);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, unsigned);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, unsigned long);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, unsigned long long);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, float);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, double);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, const void*);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, void*);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, const type_info&);
-
-extern
-template
-wtinyfmt&
-operator<<(wtinyfmt&, const exception&);
+extern template tinyfmt& operator<<(tinyfmt&, char);
+extern template tinyfmt& operator<<(tinyfmt&, const char*);
+extern template tinyfmt& operator<<(tinyfmt&, const ascii_numput&);
+extern template tinyfmt& operator<<(tinyfmt&, signed char);
+extern template tinyfmt& operator<<(tinyfmt&, signed short);
+extern template tinyfmt& operator<<(tinyfmt&, signed);
+extern template tinyfmt& operator<<(tinyfmt&, signed long);
+extern template tinyfmt& operator<<(tinyfmt&, signed long long);
+extern template tinyfmt& operator<<(tinyfmt&, unsigned char);
+extern template tinyfmt& operator<<(tinyfmt&, unsigned short);
+extern template tinyfmt& operator<<(tinyfmt&, unsigned);
+extern template tinyfmt& operator<<(tinyfmt&, unsigned long);
+extern template tinyfmt& operator<<(tinyfmt&, unsigned long long);
+extern template tinyfmt& operator<<(tinyfmt&, float);
+extern template tinyfmt& operator<<(tinyfmt&, double);
+extern template tinyfmt& operator<<(tinyfmt&, const void*);
+extern template tinyfmt& operator<<(tinyfmt&, void*);
+extern template tinyfmt& operator<<(tinyfmt&, const type_info&);
+extern template tinyfmt& operator<<(tinyfmt&, const exception&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<1, 1000000000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<1, 1000000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<1, 1000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<1>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<60>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<3600>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<86400>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<int64_t, ::std::ratio<604800>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<1, 1000000000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<1, 1000000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<1, 1000>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<1>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<60>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<3600>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<86400>>&);
+extern template tinyfmt& operator<<(tinyfmt&, const ::std::chrono::duration<double, ::std::ratio<604800>>&);
 
 }  // namespace rocket
 #endif

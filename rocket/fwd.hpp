@@ -145,14 +145,19 @@ using ::std::memory_order_acq_rel;
 using ::std::memory_order_seq_cst;
 
 // Utility macros
-#define ROCKET_CAR(x, ...)     x
-#define ROCKET_CDR(x, ...)     __VA_ARGS__
-#define ROCKET_CAT2(x, y)      x##y
-#define ROCKET_CAT3(x, y, z)   x##y##z
+#define ROCKET_CAR(x, ...)   x
+#define ROCKET_CDR(x, ...)   __VA_ARGS__
+#define ROCKET_CAT2(x,y)     x##y
+#define ROCKET_CAT3(x,y,z)   x##y##z
 
 #define ROCKET_STRINGIFY_NX(...)   #__VA_ARGS__
 #define ROCKET_STRINGIFY(...)      ROCKET_STRINGIFY_NX(__VA_ARGS__)
 #define ROCKET_SOURCE_LOCATION     __FILE__ ":" ROCKET_STRINGIFY(__LINE__)
+
+#define ROCKET_MUL_ADD_OVERFLOW(x,y,z,r)   (ROCKET_MUL_OVERFLOW(x,y,r) | ROCKET_ADD_OVERFLOW(*(r),z,r))
+#define ROCKET_ADD_MUL_OVERFLOW(x,y,z,r)   (ROCKET_ADD_OVERFLOW(x,y,r) | ROCKET_MUL_OVERFLOW(*(r),z,r))
+#define ROCKET_MUL_SUB_OVERFLOW(x,y,z,r)   (ROCKET_MUL_OVERFLOW(x,y,r) | ROCKET_SUB_OVERFLOW(*(r),z,r))
+#define ROCKET_SUB_MUL_OVERFLOW(x,y,z,r)   (ROCKET_SUB_OVERFLOW(x,y,r) | ROCKET_MUL_OVERFLOW(*(r),z,r))
 
 #define ROCKET_VOID_T(...)       typename ::std::conditional<1, void, __VA_ARGS__>::type
 #define ROCKET_ENABLE_IF(...)    typename ::std::enable_if<+bool(__VA_ARGS__)>::type* = nullptr
@@ -181,13 +186,33 @@ template<typename containerT>
 constexpr
 decltype(::std::declval<const containerT&>().size())
 size(const containerT& cont) noexcept(noexcept(cont.size()))
-  { return cont.size();  }
+  {
+    return cont.size();
+  }
 
 template<typename elementT, size_t countT>
 constexpr
 size_t
 size(const elementT (&)[countT]) noexcept
-  { return countT;  }
+  {
+    return countT;
+  }
+
+template<typename containerT>
+constexpr
+decltype(static_cast<ptrdiff_t>(::std::declval<const containerT&>().size()))
+ssize(const containerT& cont) noexcept(noexcept(static_cast<ptrdiff_t>(cont.size())))
+  {
+    return static_cast<ptrdiff_t>(cont.size());
+  }
+
+template<typename elementT, size_t countT>
+constexpr
+ptrdiff_t
+ssize(const elementT (&)[countT]) noexcept
+  {
+    return static_cast<ptrdiff_t>(countT);
+  }
 
 template<typename... typesT>
 struct conjunction
@@ -235,7 +260,9 @@ template<typename typeT>
 inline
 void
 xswap(typeT& lhs, typeT& rhs) noexcept(noexcept(swap(lhs, rhs)))
-  { swap(lhs, rhs);  }
+  {
+    swap(lhs, rhs);
+  }
 
 template<typename firstT, typename secondT, typename... restT>
 struct select_type
@@ -354,13 +381,17 @@ template<typename elementT>
 ROCKET_ALWAYS_INLINE
 elementT*
 allocN(size_t n)
-  { return allocator<elementT>().allocate(n);  }
+  {
+    return allocator<elementT>().allocate(n);
+  }
 
 template<typename elementT>
 ROCKET_ALWAYS_INLINE
 void
 freeN(typename identity<elementT>::type* p, size_t n) noexcept
-  { allocator<elementT>().deallocate(p, n);  }
+  {
+    allocator<elementT>().deallocate(p, n);
+  }
 
 template<typename elementT, typename... paramsT>
 ROCKET_ALWAYS_INLINE
@@ -678,25 +709,33 @@ template<typename xvalueT>
 constexpr
 details_fwd::binder_eq<typename decay<xvalueT>::type>
 is(xvalueT&& xval)
-  { return ::std::forward<xvalueT>(xval);  }
+  {
+    return ::std::forward<xvalueT>(xval);
+  }
 
 template<typename xvalueT>
 constexpr
 details_fwd::binder_ne<typename decay<xvalueT>::type>
 isnt(xvalueT&& xval)
-  { return ::std::forward<xvalueT>(xval);  }
+  {
+    return ::std::forward<xvalueT>(xval);
+  }
 
 template<typename xvalueT>
 constexpr
 details_fwd::binder_eq<typename decay<xvalueT>::type>
 are(xvalueT&& xval)
-  { return ::std::forward<xvalueT>(xval);  }
+  {
+    return ::std::forward<xvalueT>(xval);
+  }
 
 template<typename xvalueT>
 constexpr
 details_fwd::binder_ne<typename decay<xvalueT>::type>
 arent(xvalueT&& xval)
-  { return ::std::forward<xvalueT>(xval);  }
+  {
+    return ::std::forward<xvalueT>(xval);
+  }
 
 template<intmax_t valueT>
 struct lowest_signed
@@ -723,7 +762,9 @@ template<typename pointerT>
 constexpr
 typename remove_reference<decltype(*(::std::declval<pointerT&>()))>::type*
 unfancy(pointerT&& ptr)
-  { return ptr ? ::std::addressof(*ptr) : nullptr;  }
+  {
+    return ptr ? ::std::addressof(*ptr) : nullptr;
+  }
 
 template<typename targetT, typename sourceT>
 constexpr
@@ -733,6 +774,25 @@ static_or_dynamic_cast(sourceT&& src)
     return details_fwd::static_or_dynamic_cast_aux<targetT, sourceT>(
                      details_fwd::use_static_cast_aux<targetT, sourceT>(),
                      ::std::forward<sourceT>(src));
+  }
+
+ROCKET_ALWAYS_INLINE
+uint64_t
+mulh128(uint64_t x, uint64_t y, uint64_t* lo = nullptr) noexcept
+  {
+#ifdef __SIZEOF_INT128__
+    unsigned __int128 r = (unsigned __int128) x * y;
+    lo && (*lo = (uint64_t) r);
+    return (uint64_t) (r >> 64);
+#else
+    // https://github.com/catid/fp61/blob/master/fp61.h
+    static constexpr uint64_t M32 = 1ULL << 32;
+    uint64_t xl = x % M32, xh = x / M32;
+    uint64_t yl = y % M32, yh = y / M32;
+    uint64_t xlyl = xl * yl, xhyl = xh * yl, xlyh = xl * yh, xhyh = xh * yh;
+    lo && (*lo = xlyl + xhyl / M32 + xlyh / M32);
+    return (xlyl / M32 + xhyl + xlyh % M32) / M32 + xlyh / M32 + xhyh;
+#endif
   }
 
 }  // namespace rocket

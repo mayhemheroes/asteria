@@ -3,11 +3,10 @@
 
 #include "ascii_numput.hpp"
 #include "assert.hpp"
-#include <cmath>
 namespace rocket {
 namespace {
 
-constexpr char s_decimals[][6] =
+constexpr char s_small_decimals[][6] =
   {
     "-0", "-1", "-2", "-3", "-4", "-5", "-6", "-7", "-8", "-9", "-10", "-11",
     "-12", "-13", "-14", "-15", "-16", "-17", "-18", "-19", "-20", "-21",
@@ -253,186 +252,48 @@ constexpr char s_decimals[][6] =
   };
 
 inline
-size_t
-do_small_strlen(const char* str) noexcept
+void
+do_get_small_decimal(const char*& str_out, uint32_t& len_out, uint32_t value)
   {
-    // Load 8 bytes at once.
-    // This works because no constant string above is longer than 6.
-    uint64_t bytes;
-    ::std::memcpy(&bytes, str, sizeof(bytes));
-    bytes = htole64(bytes);
+    // Get the string for a non-negative value.
+    str_out = s_small_decimals[value] + 1;
+    uint32_t bytes;
+    ::memcpy(&bytes, str_out, sizeof(bytes));
+    bytes = le32toh(bytes);
 
     // Now see whether `bytes` contains a zero byte. The condition
     // is that there shall be a byte whose MSB becomes one after the
     // subtraction below, but was zero before it.
-    constexpr uint64_t bmask = UINT64_MAX / 0xFF;
+    constexpr uint32_t bmask = UINT32_MAX / 0xFFU;
     bytes = (bytes - bmask) & (bytes ^ (bmask << 7)) & (bmask << 7);
-    return (size_t) ROCKET_TZCNT64(bytes) / 8;
+    len_out = ROCKET_TZCNT32(bytes) / 8U;
   }
 
-template<typename valueT>
-constexpr typename make_unsigned<valueT>::type
-do_cast_U(valueT value) noexcept
-  { return static_cast<typename make_unsigned<valueT>::type>(value);  }
-
-constexpr
-char
-do_pdigit_D(uint32_t dval)
-  { return static_cast<char>('0' + dval);  }
-
-constexpr
-char
-do_pdigit_X(uint32_t dval)
-  { return static_cast<char>('0' + dval + ((9 - dval) >> 29));  }
-
-void
-do_xput_U_bkwd(char*& bp, uint64_t value, uint8_t base, size_t precision)
+inline
+uint32_t
+do_write_digits_backwards(char*& wptr, uint64_t value, uint32_t base, uint32_t precision)
   {
-    // Write digits backwards.
-    ROCKET_ASSERT(precision <= 64);
-    char* fp = bp - precision;
+    uint64_t reg = value;
+    uint32_t len = 0;
 
-    uint64_t ireg = value;
-    while(ireg != 0) {
-      // Shift a digit out.
-      uint8_t dval = static_cast<uint8_t>(ireg % base);
-      ireg /= base;
+    while(reg != 0) {
+      // Shift a digit from `reg` and write it.
+      uint64_t digit = reg % base;
+      reg /= base;
 
-      // Write this digit.
-      *(--bp) = do_pdigit_X(dval);
+      wptr --;
+      *wptr = (char) ('0' + digit + ((9U - digit) >> 61));
+      len ++;
     }
 
-    // Pad the string to at least the precision requested.
-    while(bp > fp)
-      *(--bp) = '0';
-  }
-
-template<typename valueT>
-char*
-do_check_special(char*& bp, char*& ep, valueT value)
-  {
-    switch(::std::fpclassify(value)) {
-      case FP_INFINITE:
-        bp = const_cast<char*>("-infinity");
-        ep = bp + 9;
-        return bp;
-
-      case FP_NAN:
-        bp = const_cast<char*>("-nan");
-        ep = bp + 4;
-        return bp;
-
-      case FP_ZERO:
-        bp = const_cast<char*>("-0");
-        ep = bp + 2;
-        return bp;
-
-      default:
-        return nullptr;
-    }
-  }
-
-void
-do_xfrexp_F_bin(uint64_t& mant, int& exp, double value)
-  {
-    // Note if `value` is not finite then the behavior is undefined.
-    // Get the first digit.
-    double freg = ::std::fabs(value);
-
-    // Extract the biased exponent and mantissa without the hidden bit.
-    // This function requires `freg` to be normalized, finite and positive.
-    uint64_t ireg;
-    ::std::memcpy(&ireg, &freg, sizeof(double));
-    int bexp = (int)(ireg >> 52) & 0x7FF;
-    ireg &= (UINT64_C(1) << 52) - 1;
-
-    if(bexp == 0) {
-      // Normalize the denormal value.
-      int sh = ROCKET_LZCNT64(ireg) - 11;
-      ireg <<= sh;
-      bexp -= sh - 1;
-
-      // Check the hidden bit.
-      ROCKET_ASSERT((ireg >> 52) == 1);
+    while(len < precision) {
+      // Prepend zeroes up to `precision`.
+      wptr --;
+      *wptr = '0';
+      len ++;
     }
 
-    // Recover the hidden bit.
-    ireg |= (UINT64_C(1) << 52);
-
-    // Bias the exponent back and normalize the mantissa.
-    exp = bexp - 0x3FF;
-    mant = ireg << 11;
-  }
-
-void
-do_xput_M_bin(char*& ep, uint64_t mant, const char* rdxp)
-  {
-    // Write digits in normal order.
-    uint64_t ireg = mant;
-    while(ireg != 0) {
-      uint8_t dval = static_cast<uint8_t>(ireg >> 63);
-      ireg <<= 1;
-
-      // Insert a decimal point before `rdxp`.
-      if(ep == rdxp)
-        *(ep++) = '.';
-
-      // Write this digit.
-      *(ep++) = do_pdigit_D(dval);
-    }
-
-    // If `rdxp` is set, fill zeroes until it is reached,
-    // if no decimal point has been added so far.
-    if(rdxp)
-      while(ep < rdxp)
-        *(ep++) = '0';
-  }
-
-void
-do_xput_M_hex(char*& ep, uint64_t mant, const char* rdxp)
-  {
-    // Write digits in normal order.
-    uint64_t ireg = mant;
-    while(ireg != 0) {
-      uint8_t dval = static_cast<uint8_t>(ireg >> 60);
-      ireg <<= 4;
-
-      // Insert a decimal point before `rdxp`.
-      if(ep == rdxp)
-        *(ep++) = '.';
-
-      // Write this digit.
-      *(ep++) = do_pdigit_X(dval);
-    }
-
-    // If `rdxp` is set, fill zeroes until it is reached,
-    // if no decimal point has been added so far.
-    if(rdxp)
-      while(ep < rdxp)
-        *(ep++) = '0';
-  }
-
-void
-do_xput_I_exp(char*& ep, int exp)
-  {
-    // Append the sign symbol, always.
-    if(exp < 0)
-      *(ep++) = '-';
-    else
-      *(ep++) = '+';
-
-    // Get a static string for the absolute value of `exp`.
-    // This starts with a minus sign that has to be skipped.
-    size_t absval = do_cast_U(::std::abs(exp));
-    ROCKET_ASSERT(absval < noadl::size(s_decimals));
-    const char* rp = s_decimals[absval] + 1;
-
-    // ... well, ensure at least two significant figures, like POSIX.
-    if(absval < 10)
-      *(ep++) = '0';
-
-    while(*rp != 0)
-      *(ep++) = *(rp++);
+    return len;
   }
 
 #if 0
@@ -452,7 +313,7 @@ do_print_one(int e)
   {
     __float128 value, frac;
     int exp2, b;
-    long long mant;
+    unsigned long long mant;
 
     // Calculate the boundary.
     value = powq(10, e);
@@ -473,12 +334,11 @@ do_print_one(int e)
       frac = ldexpq(frac, 53 - b);
       frac = ceilq(frac);
       frac = ldexpq(frac, b);
-      mant = (long long)frac;
+      mant = (unsigned long long) frac;
       exp2 = exp2 - 1;
 
       // Print the higher part in fixed-point format.
-      printf("\t{ 0x1.%.13llXp%+.4d, ",
-             mant & 0xFFFFFFFFFFFFF, exp2);
+      printf("    { 0x1.%.13llXp%+.4d, ", mant & 0xFFFFFFFFFFFFFULL, exp2);
     }
 
     // Calculate the reciprocal of the boundary.
@@ -488,18 +348,18 @@ do_print_one(int e)
     // Break it down into the fraction and exponent.
     frac = frexpq(value, &exp2);
 
-    // The fraction is in 63-bit mantissa format.
-    frac = ldexpq(frac, 63);
-    mant = (long long)frac;
-    exp2 = exp2 + 1;
+    // The fraction is in 64-bit mantissa format.
+    frac = ldexpq(frac, 64);
+    frac = ceilq(frac);
+    mant = (unsigned long long) frac;
 
     // Print the mantissa in fixed-point format.
     printf(" 0x%.16llX, ", mant);
 
-    // Print the exponent in binary.
+    // Print the binary exponent.
     printf("%+5d },", exp2);
 
-    // Print some comments.
+    // Print the decimal exponent comments.
     printf("  // 1.0e%+.3d\n", e);
   }
 
@@ -516,1358 +376,1603 @@ main(void)
 #endif
 
 // These are generated data. Do not edit by hand!
-struct decmult_F
+struct decimal_multiplier
   {
     double bound;
     uint64_t mant;
     int exp2;
   }
-constexpr s_decmult_F[] =
+constexpr s_decimal_multipliers[] =
   {
-    {                       0,  0x6DB4616541769502, +1134 },  // 1.0e-324
-    { 0x1.8000000000000p-1073,  0x57C3811DCDF87735, +1131 },  // 1.0e-323
-    { 0x1.5000000000000p-1070,  0x463600E4A4C6C5C4, +1128 },  // 1.0e-322
-    { 0x1.9600000000000p-1067,  0x705667D43AD7A2D3, +1124 },  // 1.0e-321
-    { 0x1.FA40000000000p-1064,  0x59DEB97695794F0F, +1121 },  // 1.0e-320
-    { 0x1.3C44000000000p-1060,  0x47E5612BAAC77273, +1118 },  // 1.0e-319
-    { 0x1.8B51800000000p-1057,  0x73089B79113F1D84, +1114 },  // 1.0e-318
-    { 0x1.EE25700000000p-1054,  0x5C06E2C740FF4AD0, +1111 },  // 1.0e-317
-    { 0x1.34D7620000000p-1050,  0x499F1BD29A65D573, +1108 },  // 1.0e-316
-    { 0x1.820D39C000000p-1047,  0x75CB5FB75D6FBBEC, +1104 },  // 1.0e-315
-    { 0x1.E290881800000p-1044,  0x5E3C4C92B1262FF0, +1101 },  // 1.0e-314
-    { 0x1.2D9A550CC0000p-1040,  0x4B6370755A84F326, +1098 },  // 1.0e-313
-    { 0x1.7900EA4FE0000p-1037,  0x789F1A555DA1850A, +1094 },  // 1.0e-312
-    { 0x1.D74124E3D2000p-1034,  0x607F48444AE79DA2, +1091 },  // 1.0e-311
-    { 0x1.2688B70E62C00p-1030,  0x4D32A036A252E481, +1088 },  // 1.0e-310
-    { 0x1.702AE4D1FB5E0p-1027,  0x7B84338A9D516D9C, +1084 },  // 1.0e-309
-    { 0x1.CC359E067A34Cp-1024,  0x62D0293BB10DF149, +1081 },  // 1.0e-308
-    { 0x1.1FA182C40C60Ep-1020,  0x4F0CEDC95A718DD4, +1078 },  // 1.0e-307
-    { 0x1.6789E3750F791p-1017,  0x7E7B160EF71C1621, +1074 },  // 1.0e-306
-    { 0x1.C16C5C5253576p-1014,  0x652F44D8C5B011B4, +1071 },  // 1.0e-305
-    { 0x1.18E3B9B37416Ap-1010,  0x50F29D7A37C00E29, +1068 },  // 1.0e-304
-    { 0x1.5F1CA820511C4p-1007,  0x40C21794F96671BA, +1065 },  // 1.0e-303
-    { 0x1.B6E3D22865635p-1004,  0x679CF287F570B5F7, +1061 },  // 1.0e-302
-    { 0x1.124E63593F5E1p-1000,  0x52E3F5399126F7F9, +1058 },  // 1.0e-301
-    { 0x1.56E1FC2F8F359p-0997,  0x424FF76140EBF994, +1055 },  // 1.0e-300
-    { 0x1.AC9A7B3B73030p-0994,  0x6A198BCECE465C20, +1051 },  // 1.0e-299
-    { 0x1.0BE08D0527E1Ep-0990,  0x54E13CA571D1E34D, +1048 },  // 1.0e-298
-    { 0x1.4ED8B04671DA5p-0987,  0x43E763B78E4182A4, +1045 },  // 1.0e-297
-    { 0x1.A28EDC580E50Ep-0984,  0x6CA56C58E39C043A, +1041 },  // 1.0e-296
-    { 0x1.059949B708F29p-0980,  0x56EABD13E9499CFB, +1038 },  // 1.0e-295
-    { 0x1.46FF9C24CB2F3p-0977,  0x458897432107B0C8, +1035 },  // 1.0e-294
-    { 0x1.98BF832DFDFB0p-0974,  0x6F40F20501A5E7A7, +1031 },  // 1.0e-293
-    { 0x1.FEEF63F97D79Cp-0971,  0x5900C19D9AEB1FB9, +1028 },  // 1.0e-292
-    { 0x1.3F559E7BEE6C2p-0967,  0x4733CE17AF227FC7, +1025 },  // 1.0e-291
-    { 0x1.8F2B061AEA072p-0964,  0x71EC7CF2B1D0CC72, +1021 },  // 1.0e-290
-    { 0x1.F2F5C7A1A488Ep-0961,  0x5B2397288E40A38E, +1018 },  // 1.0e-289
-    { 0x1.37D99CC506D59p-0957,  0x48E945BA0B66E93F, +1015 },  // 1.0e-288
-    { 0x1.85D003F6488AFp-0954,  0x74A86F90123E41FE, +1011 },  // 1.0e-287
-    { 0x1.E74404F3DAADBp-0951,  0x5D538C7341CB67FE, +1008 },  // 1.0e-286
-    { 0x1.308A831868AC9p-0947,  0x4AA93D29016F8665, +1005 },  // 1.0e-285
-    { 0x1.7CAD23DE82D7Bp-0944,  0x77752EA8024C0A3C, +1001 },  // 1.0e-284
-    { 0x1.DBD86CD6238DAp-0941,  0x5F90F22001D66E96,  +998 },  // 1.0e-283
-    { 0x1.29674405D6388p-0937,  0x4C73F4E667DEBEDE,  +995 },  // 1.0e-282
-    { 0x1.73C115074BC6Ap-0934,  0x7A532170A6313164,  +991 },  // 1.0e-281
-    { 0x1.D0B15A491EB85p-0931,  0x61DC1AC084F42783,  +988 },  // 1.0e-280
-    { 0x1.226ED86DB3333p-0927,  0x4E49AF006A5CEC69,  +985 },  // 1.0e-279
-    { 0x1.6B0A8E8920000p-0924,  0x7D42B19A43C7E0A8,  +981 },  // 1.0e-278
-    { 0x1.C5CD322B68000p-0921,  0x64355AE1CFD31A20,  +978 },  // 1.0e-277
-    { 0x1.1BA03F5B21000p-0917,  0x502AAF1B0CA8E1B3,  +975 },  // 1.0e-276
-    { 0x1.62884F31E9400p-0914,  0x402225AF3D53E7C2,  +972 },  // 1.0e-275
-    { 0x1.BB2A62FE63900p-0911,  0x669D0918621FD937,  +968 },  // 1.0e-274
-    { 0x1.14FA7DDEFE3A0p-0907,  0x52173A79E8197A92,  +965 },  // 1.0e-273
-    { 0x1.5A391D56BDC88p-0904,  0x41AC2EC7ECE12EDB,  +962 },  // 1.0e-272
-    { 0x1.B0C764AC6D3AAp-0901,  0x69137E0CAE3517C6,  +958 },  // 1.0e-271
-    { 0x1.0E7C9EEBC444Ap-0897,  0x540F980A24F74638,  +955 },  // 1.0e-270
-    { 0x1.521BC6A6B555Dp-0894,  0x433FACD4EA5F6B60,  +952 },  // 1.0e-269
-    { 0x1.A6A2B85062AB4p-0891,  0x6B991487DD657899,  +948 },  // 1.0e-268
-    { 0x1.0825B3323DAB1p-0887,  0x5614106CB11DFA14,  +945 },  // 1.0e-267
-    { 0x1.4A2F1FFECD15Dp-0884,  0x44DCD9F08DB194DD,  +942 },  // 1.0e-266
-    { 0x1.9CBAE7FE805B4p-0881,  0x6E2E2980E2B5BAFB,  +938 },  // 1.0e-265
-    { 0x1.01F4D0FF10390p-0877,  0x5824EE00B55E2F2F,  +935 },  // 1.0e-264
-    { 0x1.4272053ED4474p-0874,  0x4683F19A2AB1BF59,  +932 },  // 1.0e-263
-    { 0x1.930E868E89591p-0871,  0x70D31C29DDE93228,  +928 },  // 1.0e-262
-    { 0x1.F7D228322BAF6p-0868,  0x5A427CEE4B20F4ED,  +925 },  // 1.0e-261
-    { 0x1.3AE3591F5B4DAp-0864,  0x483530BEA280C3F1,  +922 },  // 1.0e-260
-    { 0x1.899C2F6732210p-0861,  0x73884DFDD0CE064E,  +918 },  // 1.0e-259
-    { 0x1.EC033B40FEA94p-0858,  0x5C6D0B3173D8050B,  +915 },  // 1.0e-258
-    { 0x1.338205089F29Dp-0854,  0x49F0D5C129799DA2,  +912 },  // 1.0e-257
-    { 0x1.8062864AC6F44p-0851,  0x764E22CEA8C295D1,  +908 },  // 1.0e-256
-    { 0x1.E07B27DD78B14p-0848,  0x5EA4E8A553CEDE41,  +905 },  // 1.0e-255
-    { 0x1.2C4CF8EA6B6EDp-0844,  0x4BB72084430BE500,  +902 },  // 1.0e-254
-    { 0x1.77603725064A8p-0841,  0x792500D39E796E67,  +898 },  // 1.0e-253
-    { 0x1.D53844EE47DD2p-0838,  0x60EA670FB1FABEB9,  +895 },  // 1.0e-252
-    { 0x1.25432B14ECEA3p-0834,  0x4D885272F4C89894,  +892 },  // 1.0e-251
-    { 0x1.6E93F5DA2824Cp-0831,  0x7C0D50B7EE0DC0ED,  +888 },  // 1.0e-250
-    { 0x1.CA38F350B22DFp-0828,  0x633DDA2CBE716724,  +885 },  // 1.0e-249
-    { 0x1.1E6398126F5CCp-0824,  0x4F64AE8A31F45283,  +882 },  // 1.0e-248
-    { 0x1.65FC7E170B33Ep-0821,  0x7F077DA9E986EA6B,  +878 },  // 1.0e-247
-    { 0x1.BF7B9D9CCE00Ep-0818,  0x659F97BB2138BB89,  +875 },  // 1.0e-246
-    { 0x1.17AD428200C09p-0814,  0x514C796280FA2FA1,  +872 },  // 1.0e-245
-    { 0x1.5D98932280F0Bp-0811,  0x4109FAB533FB594D,  +869 },  // 1.0e-244
-    { 0x1.B4FEB7EB212CEp-0808,  0x680FF788532BC216,  +865 },  // 1.0e-243
-    { 0x1.111F32F2F4BC1p-0804,  0x533FF939DC2301AB,  +862 },  // 1.0e-242
-    { 0x1.5566FFAFB1EB1p-0801,  0x4299942E49B59AEF,  +859 },  // 1.0e-241
-    { 0x1.AAC0BF9B9E65Dp-0798,  0x6A8F537D42BC2B18,  +855 },  // 1.0e-240
-    { 0x1.0AB877C142FFAp-0794,  0x553F75FDCEFCEF46,  +852 },  // 1.0e-239
-    { 0x1.4D6695B193BF9p-0791,  0x4432C4CB0BFD8C38,  +849 },  // 1.0e-238
-    { 0x1.A0C03B1DF8AF7p-0788,  0x6D1E07AB466279F4,  +845 },  // 1.0e-237
-    { 0x1.047824F2BB6DAp-0784,  0x574B3955D1E86190,  +842 },  // 1.0e-236
-    { 0x1.45962E2F6A491p-0781,  0x45D5C777DB204E0D,  +839 },  // 1.0e-235
-    { 0x1.96FBB9BB44DB5p-0778,  0x6FBC72595E9A167B,  +835 },  // 1.0e-234
-    { 0x1.FCBAA82A16122p-0775,  0x59638EADE54811FC,  +832 },  // 1.0e-233
-    { 0x1.3DF4A91A4DCB5p-0771,  0x4782D88B1DD34196,  +829 },  // 1.0e-232
-    { 0x1.8D71D360E13E3p-0768,  0x726AF411C952028A,  +825 },  // 1.0e-231
-    { 0x1.F0CE4839198DBp-0765,  0x5B88C3416DDB353B,  +822 },  // 1.0e-230
-    { 0x1.3680ED23AFF89p-0761,  0x493A35CDF17C2A96,  +819 },  // 1.0e-229
-    { 0x1.8421286C9BF6Bp-0758,  0x7529EFAFE8C6AA89,  +815 },  // 1.0e-228
-    { 0x1.E5297287C2F46p-0755,  0x5DBB262653D22207,  +812 },  // 1.0e-227
-    { 0x1.2F39E794D9D8Cp-0751,  0x4AFC1E850FDB4E6C,  +809 },  // 1.0e-226
-    { 0x1.7B08617A104EFp-0748,  0x77F9CA6E7FC54A47,  +805 },  // 1.0e-225
-    { 0x1.D9CA79D89462Ap-0745,  0x5FFB085866376E9F,  +802 },  // 1.0e-224
-    { 0x1.281E8C275CBDBp-0741,  0x4CC8D379EB5F8BB2,  +799 },  // 1.0e-223
-    { 0x1.72262F3133ED1p-0738,  0x7ADAEBF64565AC51,  +795 },  // 1.0e-222
-    { 0x1.CEAFBAFD80E85p-0735,  0x6248BCC5045156A7,  +792 },  // 1.0e-221
-    { 0x1.212DD4DE70914p-0731,  0x4EA0970403744552,  +789 },  // 1.0e-220
-    { 0x1.69794A160CB58p-0728,  0x7DCDBE6CD253A21E,  +785 },  // 1.0e-219
-    { 0x1.C3D79C9B8FE2Ep-0725,  0x64A498570EA94E7E,  +782 },  // 1.0e-218
-    { 0x1.1A66C1E139EDDp-0721,  0x5083AD1272210B98,  +779 },  // 1.0e-217
-    { 0x1.6100725988694p-0718,  0x40695741F4E73C79,  +776 },  // 1.0e-216
-    { 0x1.B9408EEFEA839p-0715,  0x670EF2032171FA5C,  +772 },  // 1.0e-215
-    { 0x1.13C85955F2924p-0711,  0x52725B35B45B2EB0,  +769 },  // 1.0e-214
-    { 0x1.58BA6FAB6F36Dp-0708,  0x41F515C49048F226,  +766 },  // 1.0e-213
-    { 0x1.AEE90B964B048p-0705,  0x698822D41A0E503E,  +762 },  // 1.0e-212
-    { 0x1.0D51A73DEEE2Dp-0701,  0x546CE8A9AE71D9CB,  +759 },  // 1.0e-211
-    { 0x1.50A6110D6A9B8p-0698,  0x438A53BAF1F4AE3C,  +756 },  // 1.0e-210
-    { 0x1.A4CF9550C5426p-0695,  0x6C1085F7E9877D2D,  +752 },  // 1.0e-209
-    { 0x1.0701BD527B498p-0691,  0x56739E5FEE05FDBD,  +749 },  // 1.0e-208
-    { 0x1.48C22CA71A1BEp-0688,  0x45294B7FF19E6497,  +746 },  // 1.0e-207
-    { 0x1.9AF2B7D0E0A2Dp-0685,  0x6EA878CCB5CA3A8C,  +742 },  // 1.0e-206
-    { 0x1.00D7B2E28C65Cp-0681,  0x5886C70A2B082ED6,  +739 },  // 1.0e-205
-    { 0x1.410D9F9B2F7F3p-0678,  0x46D238D4EF39BF12,  +736 },  // 1.0e-204
-    { 0x1.91510781FB5F0p-0675,  0x71505AEE4B8F981D,  +732 },  // 1.0e-203
-    { 0x1.F5A549627A36Cp-0672,  0x5AA6AF25093FACE4,  +729 },  // 1.0e-202
-    { 0x1.39874DDD8C624p-0668,  0x488558EA6DCC8A50,  +726 },  // 1.0e-201
-    { 0x1.87E92154EF7ADp-0665,  0x74088E43E2E0DD4C,  +722 },  // 1.0e-200
-    { 0x1.E9E369AA2B598p-0662,  0x5CD3A5031BE71770,  +719 },  // 1.0e-199
-    { 0x1.322E220A5B17Fp-0658,  0x4A42EA68E31F45F3,  +716 },  // 1.0e-198
-    { 0x1.7EB9AA8CF1DDFp-0655,  0x76D1770E38320986,  +712 },  // 1.0e-197
-    { 0x1.DE6815302E556p-0652,  0x5F0DF8D82CF4D46B,  +709 },  // 1.0e-196
-    { 0x1.2B010D3E1CF56p-0648,  0x4C0B2D79BD90A9EF,  +706 },  // 1.0e-195
-    { 0x1.75C1508DA432Bp-0645,  0x79AB7BF5FC1AA97F,  +702 },  // 1.0e-194
-    { 0x1.D331A4B10D3F6p-0642,  0x6155FCC4C9AEEDFF,  +699 },  // 1.0e-193
-    { 0x1.23FF06EEA847Ap-0638,  0x4DDE63D0A158BE65,  +696 },  // 1.0e-192
-    { 0x1.6CFEC8AA52598p-0635,  0x7C97061A9BC130A2,  +692 },  // 1.0e-191
-    { 0x1.C83E7AD4E6EFEp-0632,  0x63AC04E2163426E8,  +689 },  // 1.0e-190
-    { 0x1.1D270CC51055Fp-0628,  0x4FBCD0B4DE901F20,  +686 },  // 1.0e-189
-    { 0x1.6470CFF6546B7p-0625,  0x7F9481216419CB67,  +682 },  // 1.0e-188
-    { 0x1.BD8D03F3E9864p-0622,  0x6610674DE9AE3C52,  +679 },  // 1.0e-187
-    { 0x1.1678227871F3Fp-0618,  0x51A6B90B21583042,  +676 },  // 1.0e-186
-    { 0x1.5C162B168E70Fp-0615,  0x41522DA2811359CE,  +673 },  // 1.0e-185
-    { 0x1.B31BB5DC320D2p-0612,  0x68837C3734EBC2E3,  +669 },  // 1.0e-184
-    { 0x1.0FF151A99F483p-0608,  0x539C635F5D8968B6,  +666 },  // 1.0e-183
-    { 0x1.53EDA614071A4p-0605,  0x42E382B2B13ABA2B,  +663 },  // 1.0e-182
-    { 0x1.A8E90F9908E0Dp-0602,  0x6B059DEAB52AC378,  +659 },  // 1.0e-181
-    { 0x1.0991A9BFA58C8p-0598,  0x559E17EEF755692D,  +656 },  // 1.0e-180
-    { 0x1.4BF6142F8EEFAp-0595,  0x447E798BF91120F1,  +653 },  // 1.0e-179
-    { 0x1.9EF3993B72AB9p-0592,  0x6D9728DFF4E834B5,  +649 },  // 1.0e-178
-    { 0x1.03583FC527AB4p-0588,  0x57AC20B32A535D5D,  +646 },  // 1.0e-177
-    { 0x1.442E4FB671961p-0585,  0x46234D5C21DC4AB1,  +643 },  // 1.0e-176
-    { 0x1.9539E3A40DFB9p-0582,  0x70387BC69C93AAB5,  +639 },  // 1.0e-175
-    { 0x1.FA885C8D117A7p-0579,  0x59C6C96BB076222A,  +636 },  // 1.0e-174
-    { 0x1.3C9539D82AEC8p-0575,  0x47D23ABC8D2B4E88,  +633 },  // 1.0e-173
-    { 0x1.8BBA884E35A7Ap-0572,  0x72E9F79415121740,  +629 },  // 1.0e-172
-    { 0x1.EEA92A61C3119p-0569,  0x5BEE5FA9AA74DF67,  +626 },  // 1.0e-171
-    { 0x1.3529BA7D19EB0p-0565,  0x498B7FBAEEC3E5EC,  +623 },  // 1.0e-170
-    { 0x1.8274291C6065Bp-0562,  0x75ABFF917E063CAC,  +619 },  // 1.0e-169
-    { 0x1.E3113363787F2p-0559,  0x5E2332DACB38308A,  +616 },  // 1.0e-168
-    { 0x1.2DEAC01E2B4F7p-0555,  0x4B4F5BE23C2CF3A1,  +613 },  // 1.0e-167
-    { 0x1.79657025B6235p-0552,  0x787EF969F9E185CF,  +609 },  // 1.0e-166
-    { 0x1.D7BECC2F23AC2p-0549,  0x60659454C7E79E3F,  +606 },  // 1.0e-165
-    { 0x1.26D73F9D764BAp-0545,  0x4D1E1043D31FB1CC,  +603 },  // 1.0e-164
-    { 0x1.708D0F84D3DE8p-0542,  0x7B634D3951CC4FAD,  +599 },  // 1.0e-163
-    { 0x1.CCB0536608D62p-0539,  0x62B5D7610E3D0C8B,  +596 },  // 1.0e-162
-    { 0x1.1FEE341FC585Dp-0535,  0x4EF7DF80D830D6D5,  +593 },  // 1.0e-161
-    { 0x1.67E9C127B6E75p-0532,  0x7E59659AF38157BC,  +589 },  // 1.0e-160
-    { 0x1.C1E43171A4A12p-0529,  0x65145148C2CDDFC9,  +586 },  // 1.0e-159
-    { 0x1.192E9EE706E4Bp-0525,  0x50DD0DD3CF0B196E,  +583 },  // 1.0e-158
-    { 0x1.5F7A46A0C89DEp-0522,  0x40B0D7DCA5A27ABE,  +580 },  // 1.0e-157
-    { 0x1.B758D848FAC55p-0519,  0x678159610903F797,  +576 },  // 1.0e-156
-    { 0x1.1297872D9CBB5p-0515,  0x52CDE11A6D9CC612,  +573 },  // 1.0e-155
-    { 0x1.573D68F903EA3p-0512,  0x423E4DAEBE1704DB,  +570 },  // 1.0e-154
-    { 0x1.AD0CC33744E4Bp-0509,  0x69FD4917968B3AF9,  +566 },  // 1.0e-153
-    { 0x1.0C27FA028B0EFp-0505,  0x54CAA0DFABA29594,  +563 },  // 1.0e-152
-    { 0x1.4F31F8832DD2Bp-0502,  0x43D54D7FBC821143,  +560 },  // 1.0e-151
-    { 0x1.A2FE76A3F9475p-0499,  0x6C887BFF94034ED2,  +556 },  // 1.0e-150
-    { 0x1.05DF0A267BCCAp-0495,  0x56D396661002A574,  +553 },  // 1.0e-149
-    { 0x1.4756CCB01ABFCp-0492,  0x457611EB40021DF7,  +550 },  // 1.0e-148
-    { 0x1.992C7FDC216FBp-0489,  0x6F234FDECCD02FF1,  +546 },  // 1.0e-147
-    { 0x1.FF779FD329CB9p-0486,  0x58E90CB23D73598E,  +543 },  // 1.0e-146
-    { 0x1.3FAAC3E3FA1F4p-0482,  0x4720D6F4FDF5E13E,  +540 },  // 1.0e-145
-    { 0x1.8F9574DCF8A71p-0479,  0x71CE24BB2FEFCECA,  +536 },  // 1.0e-144
-    { 0x1.F37AD21436D0Dp-0476,  0x5B0B5095BFF30BD5,  +533 },  // 1.0e-143
-    { 0x1.382CC34CA2428p-0472,  0x48D5DA11665C0977,  +530 },  // 1.0e-142
-    { 0x1.8637F41FCAD32p-0469,  0x74895CE8A3C6758B,  +526 },  // 1.0e-141
-    { 0x1.E7C5F127BD87Fp-0466,  0x5D3AB0BA1C9EC46F,  +523 },  // 1.0e-140
-    { 0x1.30DBB6B8D674Fp-0462,  0x4A955A2E7D4BD059,  +520 },  // 1.0e-139
-    { 0x1.7D12A4670C123p-0459,  0x77555D172EDFB3C2,  +516 },  // 1.0e-138
-    { 0x1.DC574D80CF16Cp-0456,  0x5F777DAC257FC301,  +513 },  // 1.0e-137
-    { 0x1.29B69070816E3p-0452,  0x4C5F97BCEACC9C01,  +510 },  // 1.0e-136
-    { 0x1.7424348CA1C9Cp-0449,  0x7A328C6177ADC668,  +506 },  // 1.0e-135
-    { 0x1.D12D41AFCA3C3p-0446,  0x61C209E792F16B86,  +503 },  // 1.0e-134
-    { 0x1.22BC490DDE65Ap-0442,  0x4E34D4B9425ABC6B,  +500 },  // 1.0e-133
-    { 0x1.6B6B5B5155FF1p-0439,  0x7D21545B9D5DFA46,  +496 },  // 1.0e-132
-    { 0x1.C6463225AB7EDp-0436,  0x641AA9E2E44B2E9E,  +493 },  // 1.0e-131
-    { 0x1.1BEBDF578B2F4p-0432,  0x501554B5836F587E,  +490 },  // 1.0e-130
-    { 0x1.62E6D72D6DFB1p-0429,  0x4011109135F2AD32,  +487 },  // 1.0e-129
-    { 0x1.BBA08CF8C979Dp-0426,  0x6681B41B89844850,  +483 },  // 1.0e-128
-    { 0x1.1544581B7DEC2p-0422,  0x52015CE2D469D373,  +480 },  // 1.0e-127
-    { 0x1.5A956E225D673p-0419,  0x419AB0B576BB0F8F,  +477 },  // 1.0e-126
-    { 0x1.B13AC9AAF4C0Fp-0416,  0x68F781225791B27F,  +473 },  // 1.0e-125
-    { 0x1.0EC4BE0AD8F8Ap-0412,  0x53F9341B79415B99,  +470 },  // 1.0e-124
-    { 0x1.5275ED8D8F36Cp-0409,  0x432DC3492DCDE2E1,  +467 },  // 1.0e-123
-    { 0x1.A71368F0F3047p-0406,  0x6B7C6BA849496B01,  +463 },  // 1.0e-122
-    { 0x1.086C219697E2Dp-0402,  0x55FD22ED076DEF34,  +460 },  // 1.0e-121
-    { 0x1.4A8729FC3DDB8p-0399,  0x44CA82573924BF5D,  +457 },  // 1.0e-120
-    { 0x1.9D28F47B4D525p-0396,  0x6E10D08B8EA1322E,  +453 },  // 1.0e-119
-    { 0x1.023998CD10538p-0392,  0x580D73A2D880F4F2,  +450 },  // 1.0e-118
-    { 0x1.42C7FF0054685p-0389,  0x4671294F139A5D8E,  +447 },  // 1.0e-117
-    { 0x1.9379FEC069827p-0386,  0x70B50EE4EC2A2F4A,  +443 },  // 1.0e-116
-    { 0x1.F8587E7083E30p-0383,  0x5A2A7250BCEE8C3B,  +440 },  // 1.0e-115
-    { 0x1.3B374F06526DEp-0379,  0x4821F50D63F209C9,  +437 },  // 1.0e-114
-    { 0x1.8A0522C7E7096p-0376,  0x736988156CB6760E,  +433 },  // 1.0e-113
-    { 0x1.EC866B79E0CBBp-0373,  0x5C546CDDF091F80B,  +430 },  // 1.0e-112
-    { 0x1.33D4032C2C7F5p-0369,  0x49DD23E4C074C66F,  +427 },  // 1.0e-111
-    { 0x1.80C903F7379F2p-0366,  0x762E9FD467213D7F,  +423 },  // 1.0e-110
-    { 0x1.E0FB44F50586Fp-0363,  0x5E8BB3105280FDFF,  +420 },  // 1.0e-109
-    { 0x1.2C9D0B1923745p-0359,  0x4BA2F5A6A8673199,  +417 },  // 1.0e-108
-    { 0x1.77C44DDF6C516p-0356,  0x7904BC3DDA3EB5C2,  +413 },  // 1.0e-107
-    { 0x1.D5B561574765Cp-0353,  0x60D09697E1CBC49B,  +410 },  // 1.0e-106
-    { 0x1.25915CD68C9FAp-0349,  0x4D73ABACB4A303AF,  +407 },  // 1.0e-105
-    { 0x1.6EF5B40C2FC78p-0346,  0x7BEC45E12104D2B2,  +403 },  // 1.0e-104
-    { 0x1.CAB3210F3BB96p-0343,  0x63236B1A80D0A88E,  +400 },  // 1.0e-103
-    { 0x1.1EAFF4A98553Ep-0339,  0x4F4F88E200A6ED3F,  +397 },  // 1.0e-102
-    { 0x1.665BF1D3E6A8Dp-0336,  0x7EE5A7D0010B1531,  +393 },  // 1.0e-101
-    { 0x1.BFF2EE48E0530p-0333,  0x6584864000D5AA8E,  +390 },  // 1.0e-100
-    { 0x1.17F7D4ED8C33Ep-0329,  0x5136D1CCCD77BBA4,  +387 },  // 1.0e-099
-    { 0x1.5DF5CA28EF40Ep-0326,  0x40F8A7D70AC62FB7,  +384 },  // 1.0e-098
-    { 0x1.B5733CB32B111p-0323,  0x67F43FBE77A37F8B,  +380 },  // 1.0e-097
-    { 0x1.116805EFFAEABp-0319,  0x5329CC985FB5FFA2,  +377 },  // 1.0e-096
-    { 0x1.55C2076BF9A56p-0316,  0x4287D6E04C91994F,  +374 },  // 1.0e-095
-    { 0x1.AB328946F80EBp-0313,  0x6A72F166E0E8F54B,  +370 },  // 1.0e-094
-    { 0x1.0AFF95CC5B093p-0309,  0x5528C11F1A53F76F,  +367 },  // 1.0e-093
-    { 0x1.4DBF7B3F71CB8p-0306,  0x44209A7F48432C59,  +364 },  // 1.0e-092
-    { 0x1.A12F5A0F4E3E5p-0303,  0x6D00F7320D3846F4,  +360 },  // 1.0e-091
-    { 0x1.04BD984990E70p-0299,  0x5733F8F4D76038C3,  +357 },  // 1.0e-090
-    { 0x1.45ECFE5BF520Bp-0296,  0x45C32D90AC4CFA36,  +354 },  // 1.0e-089
-    { 0x1.97683DF2F268Ep-0293,  0x6F9EAF4DE07B29F0,  +350 },  // 1.0e-088
-    { 0x1.FD424D6FAF031p-0290,  0x594BBF71806287F3,  +347 },  // 1.0e-087
-    { 0x1.3E497065CD61Fp-0286,  0x476FCC5ACD1B9FF6,  +344 },  // 1.0e-086
-    { 0x1.8DDBCC7F40BA7p-0283,  0x724C7A2AE1C5CCBD,  +340 },  // 1.0e-085
-    { 0x1.F152BF9F10E90p-0280,  0x5B7061BBE7D17097,  +337 },  // 1.0e-084
-    { 0x1.36D3B7C36A91Ap-0276,  0x4926B496530DF3AC,  +334 },  // 1.0e-083
-    { 0x1.8488A5B445361p-0273,  0x750ABA8A1E7CB913,  +330 },  // 1.0e-082
-    { 0x1.E5AACF2156839p-0270,  0x5DA22ED4E530940F,  +327 },  // 1.0e-081
-    { 0x1.2F8AC174D6124p-0266,  0x4AE825771DC07672,  +324 },  // 1.0e-080
-    { 0x1.7B6D71D20B96Dp-0263,  0x77D9D58B62CD8A51,  +320 },  // 1.0e-079
-    { 0x1.DA48CE468E7C8p-0260,  0x5FE177A2B5713B74,  +317 },  // 1.0e-078
-    { 0x1.286D80EC190DDp-0256,  0x4CB45FB55DF42F90,  +314 },  // 1.0e-077
-    { 0x1.7288E1271F514p-0253,  0x7ABA32BBC986B280,  +310 },  // 1.0e-076
-    { 0x1.CF2B1970E7259p-0250,  0x622E8EFCA1388ECD,  +307 },  // 1.0e-075
-    { 0x1.217AEFE690778p-0246,  0x4E8BA596E760723D,  +304 },  // 1.0e-074
-    { 0x1.69D9ABE034956p-0243,  0x7DAC3C24A5671D2F,  +300 },  // 1.0e-073
-    { 0x1.C45016D841BABp-0240,  0x6489C9B6EAB8E426,  +297 },  // 1.0e-072
-    { 0x1.1AB20E472914Bp-0236,  0x506E3AF8BBC71CEB,  +294 },  // 1.0e-071
-    { 0x1.615E91D8F359Ep-0233,  0x40582F2D6305B0BC,  +291 },  // 1.0e-070
-    { 0x1.B9B6364F30305p-0230,  0x66F37EAF04D5E793,  +287 },  // 1.0e-069
-    { 0x1.1411E1F17E1E3p-0226,  0x525C6558D0AB1FA9,  +284 },  // 1.0e-068
-    { 0x1.59165A6DDDA5Cp-0223,  0x41E384470D55B2ED,  +281 },  // 1.0e-067
-    { 0x1.AF5BF109550F3p-0220,  0x696C06D81555EB15,  +277 },  // 1.0e-066
-    { 0x1.0D9976A5D5298p-0216,  0x54566BE0111188DE,  +274 },  // 1.0e-065
-    { 0x1.50FFD44F4A73Ep-0213,  0x4378564CDA746D7E,  +271 },  // 1.0e-064
-    { 0x1.A53FC9631D10Dp-0210,  0x6BF3BD47C3ED7BFD,  +267 },  // 1.0e-063
-    { 0x1.0747DDDDF22A8p-0206,  0x565C976C9CBDFCCB,  +264 },  // 1.0e-062
-    { 0x1.4919D5556EB52p-0203,  0x4516DF8A16FE63D5,  +261 },  // 1.0e-061
-    { 0x1.9B604AAACA627p-0200,  0x6E8AFF4357FD6C89,  +257 },  // 1.0e-060
-    { 0x1.011C2EAABE7D8p-0196,  0x586F329C466456D4,  +254 },  // 1.0e-059
-    { 0x1.41633A556E1CEp-0193,  0x46BF5BB038504576,  +251 },  // 1.0e-058
-    { 0x1.91BC08EAC9A42p-0190,  0x71322C4D26E6D58A,  +247 },  // 1.0e-057
-    { 0x1.F62B0B257C0D2p-0187,  0x5A8E89D75252446E,  +244 },  // 1.0e-056
-    { 0x1.39DAE6F76D884p-0183,  0x487207DF750E9D25,  +241 },  // 1.0e-055
-    { 0x1.8851A0B548EA4p-0180,  0x73E9A63254E42EA2,  +237 },  // 1.0e-054
-    { 0x1.EA6608E29B24Dp-0177,  0x5CBAEB5B771CF21B,  +234 },  // 1.0e-053
-    { 0x1.327FC58DA0F70p-0173,  0x4A2F22AF927D8E7C,  +231 },  // 1.0e-052
-    { 0x1.7F1FB6F10934Cp-0170,  0x76B1D118EA627D93,  +227 },  // 1.0e-051
-    { 0x1.DEE7A4AD4B81Fp-0167,  0x5EF4A74721E86476,  +224 },  // 1.0e-050
-    { 0x1.2B50C6EC4F314p-0163,  0x4BF6EC38E7ED1D2B,  +221 },  // 1.0e-049
-    { 0x1.7624F8A762FD9p-0160,  0x798B138E3FE1C845,  +217 },  // 1.0e-048
-    { 0x1.D3AE36D13BBCFp-0157,  0x613C0FA4FFE7D36A,  +214 },  // 1.0e-047
-    { 0x1.244CE242C5561p-0153,  0x4DC9A61D998642BB,  +211 },  // 1.0e-046
-    { 0x1.6D601AD376ABAp-0150,  0x7C75D695C2706AC5,  +207 },  // 1.0e-045
-    { 0x1.C8B8218854568p-0147,  0x63917877CEC0556B,  +204 },  // 1.0e-044
-    { 0x1.1D7314F534B61p-0143,  0x4FA793930BCD1122,  +201 },  // 1.0e-043
-    { 0x1.64CFDA3281E39p-0140,  0x7F7285B812E1B504,  +197 },  // 1.0e-042
-    { 0x1.BE03D0BF225C7p-0137,  0x65F537C675815D9C,  +194 },  // 1.0e-041
-    { 0x1.16C262777579Dp-0133,  0x5190F96B91344AE3,  +191 },  // 1.0e-040
-    { 0x1.5C72FB1552D84p-0130,  0x4140C78940F6A24F,  +188 },  // 1.0e-039
-    { 0x1.B38FB9DAA78E5p-0127,  0x6867A5A867F103B2,  +184 },  // 1.0e-038
-    { 0x1.1039D428A8B8Fp-0123,  0x53861E2053273628,  +181 },  // 1.0e-037
-    { 0x1.54484932D2E73p-0120,  0x42D1B1B375B8F820,  +178 },  // 1.0e-036
-    { 0x1.A95A5B7F87A0Fp-0117,  0x6AE91C5255F4C034,  +174 },  // 1.0e-035
-    { 0x1.09D8792FB4C4Ap-0113,  0x558749DB77F70029,  +171 },  // 1.0e-034
-    { 0x1.4C4E977BA1F5Cp-0110,  0x446C3B15F9926687,  +168 },  // 1.0e-033
-    { 0x1.9F623D5A8A733p-0107,  0x6D79F82328EA3DA6,  +164 },  // 1.0e-032
-    { 0x1.039D665896880p-0103,  0x5794C6828721CAEB,  +161 },  // 1.0e-031
-    { 0x1.4484BFEEBC2A0p-0100,  0x46109ECED2816F22,  +158 },  // 1.0e-030
-    { 0x1.95A5EFEA6B348p-0097,  0x701A97B150CF1837,  +154 },  // 1.0e-029
-    { 0x1.FB0F6BE50601Ap-0094,  0x59AEDFC10D7279C5,  +151 },  // 1.0e-028
-    { 0x1.3CE9A36F23C10p-0090,  0x47BF19673DF52E37,  +148 },  // 1.0e-027
-    { 0x1.8C240C4AECB14p-0087,  0x72CB5BD86321E38C,  +144 },  // 1.0e-026
-    { 0x1.EF2D0F5DA7DD9p-0084,  0x5BD5E313828182D6,  +141 },  // 1.0e-025
-    { 0x1.357C299A88EA8p-0080,  0x4977E8DC68679BDF,  +138 },  // 1.0e-024
-    { 0x1.82DB34012B252p-0077,  0x758CA7C70D7292FE,  +134 },  // 1.0e-023
-    { 0x1.E392010175EE6p-0074,  0x5E0A1FD271287598,  +131 },  // 1.0e-022
-    { 0x1.2E3B40A0E9B50p-0070,  0x4B3B4CA85A86C47A,  +128 },  // 1.0e-021
-    { 0x1.79CA10C924224p-0067,  0x785EE10D5DA46D90,  +124 },  // 1.0e-020
-    { 0x1.D83C94FB6D2ADp-0064,  0x604BE73DE4838AD9,  +121 },  // 1.0e-019
-    { 0x1.2725DD1D243ACp-0060,  0x4D0985CB1D3608AE,  +118 },  // 1.0e-018
-    { 0x1.70EF54646D497p-0057,  0x7B426FAB61F00DE3,  +114 },  // 1.0e-017
-    { 0x1.CD2B297D889BDp-0054,  0x629B8C891B267182,  +111 },  // 1.0e-016
-    { 0x1.203AF9EE75616p-0050,  0x4EE2D6D415B85ACE,  +108 },  // 1.0e-015
-    { 0x1.6849B86A12B9Cp-0047,  0x7E37BE2022C0914B,  +104 },  // 1.0e-014
-    { 0x1.C25C268497682p-0044,  0x64F964E68233A76F,  +101 },  // 1.0e-013
-    { 0x1.19799812DEA12p-0040,  0x50C783EB9B5C85F2,   +98 },  // 1.0e-012
-    { 0x1.5FD7FE1796496p-0037,  0x409F9CBC7C4A04C2,   +95 },  // 1.0e-011
-    { 0x1.B7CDFD9D7BDBBp-0034,  0x6765C793FA10079D,   +91 },  // 1.0e-010
-    { 0x1.12E0BE826D695p-0030,  0x52B7D2DCC80CD2E4,   +88 },  // 1.0e-009
-    { 0x1.5798EE2308C3Ap-0027,  0x422CA8B0A00A4250,   +85 },  // 1.0e-008
-    { 0x1.AD7F29ABCAF49p-0024,  0x69E10DE76676D080,   +81 },  // 1.0e-007
-    { 0x1.0C6F7A0B5ED8Ep-0020,  0x54B40B1F852BDA00,   +78 },  // 1.0e-006
-    { 0x1.4F8B588E368F1p-0017,  0x43C33C1937564800,   +75 },  // 1.0e-005
-    { 0x1.A36E2EB1C432Dp-0014,  0x6C6B935B8BBD4000,   +71 },  // 1.0e-004
-    { 0x1.0624DD2F1A9FCp-0010,  0x56BC75E2D6310000,   +68 },  // 1.0e-003
-    { 0x1.47AE147AE147Bp-0007,  0x4563918244F40000,   +65 },  // 1.0e-002
-    { 0x1.999999999999Ap-0004,  0x6F05B59D3B200000,   +61 },  // 1.0e-001
-    { 0x1.0000000000000p+0000,  0x58D15E1762800000,   +58 },  // 1.0e+000
-    { 0x1.4000000000000p+0003,  0x470DE4DF82000000,   +55 },  // 1.0e+001
-    { 0x1.9000000000000p+0006,  0x71AFD498D0000000,   +51 },  // 1.0e+002
-    { 0x1.F400000000000p+0009,  0x5AF3107A40000000,   +48 },  // 1.0e+003
-    { 0x1.3880000000000p+0013,  0x48C2739500000000,   +45 },  // 1.0e+004
-    { 0x1.86A0000000000p+0016,  0x746A528800000000,   +41 },  // 1.0e+005
-    { 0x1.E848000000000p+0019,  0x5D21DBA000000000,   +38 },  // 1.0e+006
-    { 0x1.312D000000000p+0023,  0x4A817C8000000000,   +35 },  // 1.0e+007
-    { 0x1.7D78400000000p+0026,  0x7735940000000000,   +31 },  // 1.0e+008
-    { 0x1.DCD6500000000p+0029,  0x5F5E100000000000,   +28 },  // 1.0e+009
-    { 0x1.2A05F20000000p+0033,  0x4C4B400000000000,   +25 },  // 1.0e+010
-    { 0x1.74876E8000000p+0036,  0x7A12000000000000,   +21 },  // 1.0e+011
-    { 0x1.D1A94A2000000p+0039,  0x61A8000000000000,   +18 },  // 1.0e+012
-    { 0x1.2309CE5400000p+0043,  0x4E20000000000000,   +15 },  // 1.0e+013
-    { 0x1.6BCC41E900000p+0046,  0x7D00000000000000,   +11 },  // 1.0e+014
-    { 0x1.C6BF526340000p+0049,  0x6400000000000000,    +8 },  // 1.0e+015
-    { 0x1.1C37937E08000p+0053,  0x5000000000000000,    +5 },  // 1.0e+016
-    { 0x1.6345785D8A000p+0056,  0x4000000000000000,    +2 },  // 1.0e+017
-    { 0x1.BC16D674EC800p+0059,  0x6666666666666666,    -2 },  // 1.0e+018
-    { 0x1.158E460913D00p+0063,  0x51EB851EB851EB85,    -5 },  // 1.0e+019
-    { 0x1.5AF1D78B58C40p+0066,  0x4189374BC6A7EF9D,    -8 },  // 1.0e+020
-    { 0x1.B1AE4D6E2EF50p+0069,  0x68DB8BAC710CB295,   -12 },  // 1.0e+021
-    { 0x1.0F0CF064DD592p+0073,  0x53E2D6238DA3C211,   -15 },  // 1.0e+022
-    { 0x1.52D02C7E14AF7p+0076,  0x431BDE82D7B634DA,   -18 },  // 1.0e+023
-    { 0x1.A784379D99DB5p+0079,  0x6B5FCA6AF2BD215E,   -22 },  // 1.0e+024
-    { 0x1.08B2A2C280291p+0083,  0x55E63B88C230E77E,   -25 },  // 1.0e+025
-    { 0x1.4ADF4B7320335p+0086,  0x44B82FA09B5A52CB,   -28 },  // 1.0e+026
-    { 0x1.9D971E4FE8402p+0089,  0x6DF37F675EF6EADF,   -32 },  // 1.0e+027
-    { 0x1.027E72F1F1282p+0093,  0x57F5FF85E592557F,   -35 },  // 1.0e+028
-    { 0x1.431E0FAE6D722p+0096,  0x465E6604B7A84465,   -38 },  // 1.0e+029
-    { 0x1.93E5939A08CEAp+0099,  0x709709A125DA0709,   -42 },  // 1.0e+030
-    { 0x1.F8DEF8808B025p+0102,  0x5A126E1A84AE6C07,   -45 },  // 1.0e+031
-    { 0x1.3B8B5B5056E17p+0106,  0x480EBE7B9D58566C,   -48 },  // 1.0e+032
-    { 0x1.8A6E32246C99Dp+0109,  0x734ACA5F6226F0AD,   -52 },  // 1.0e+033
-    { 0x1.ED09BEAD87C04p+0112,  0x5C3BD5191B525A24,   -55 },  // 1.0e+034
-    { 0x1.3426172C74D83p+0116,  0x49C97747490EAE83,   -58 },  // 1.0e+035
-    { 0x1.812F9CF7920E3p+0119,  0x760F253EDB4AB0D2,   -62 },  // 1.0e+036
-    { 0x1.E17B84357691Cp+0122,  0x5E72843249088D75,   -65 },  // 1.0e+037
-    { 0x1.2CED32A16A1B2p+0126,  0x4B8ED0283A6D3DF7,   -68 },  // 1.0e+038
-    { 0x1.78287F49C4A1Ep+0129,  0x78E480405D7B9658,   -72 },  // 1.0e+039
-    { 0x1.D6329F1C35CA5p+0132,  0x60B6CD004AC94513,   -75 },  // 1.0e+040
-    { 0x1.25DFA371A19E7p+0136,  0x4D5F0A66A23A9DA9,   -78 },  // 1.0e+041
-    { 0x1.6F578C4E0A061p+0139,  0x7BCB43D769F762A8,   -82 },  // 1.0e+042
-    { 0x1.CB2D6F618C879p+0142,  0x63090312BB2C4EED,   -85 },  // 1.0e+043
-    { 0x1.1EFC659CF7D4Cp+0146,  0x4F3A68DBC8F03F24,   -88 },  // 1.0e+044
-    { 0x1.66BB7F0435C9Fp+0149,  0x7EC3DAF941806506,   -92 },  // 1.0e+045
-    { 0x1.C06A5EC5433C7p+0152,  0x65697BFA9ACD1D9F,   -95 },  // 1.0e+046
-    { 0x1.18427B3B4A05Cp+0156,  0x51212FFBAF0A7E18,   -98 },  // 1.0e+047
-    { 0x1.5E531A0A1C873p+0159,  0x40E7599625A1FE7A,  -101 },  // 1.0e+048
-    { 0x1.B5E7E08CA3A90p+0162,  0x67D88F56A29CCA5D,  -105 },  // 1.0e+049
-    { 0x1.11B0EC57E649Ap+0166,  0x5313A5DEE87D6EB0,  -108 },  // 1.0e+050
-    { 0x1.561D276DDFDC1p+0169,  0x42761E4BED31255A,  -111 },  // 1.0e+051
-    { 0x1.ABA4714957D31p+0172,  0x6A5696DFE1E83BC3,  -115 },  // 1.0e+052
-    { 0x1.0B46C6CDD6E3Fp+0176,  0x5512124CB4B9C969,  -118 },  // 1.0e+053
-    { 0x1.4E1878814C9CEp+0179,  0x440E750A2A2E3ABA,  -121 },  // 1.0e+054
-    { 0x1.A19E96A19FC41p+0182,  0x6CE3EE76A9E3912A,  -125 },  // 1.0e+055
-    { 0x1.05031E2503DA9p+0186,  0x571CBEC554B60DBB,  -128 },  // 1.0e+056
-    { 0x1.4643E5AE44D13p+0189,  0x45B0989DDD5E7163,  -131 },  // 1.0e+057
-    { 0x1.97D4DF19D6058p+0192,  0x6F80F42FC8971BD1,  -135 },  // 1.0e+058
-    { 0x1.FDCA16E04B86Ep+0195,  0x5933F68CA078E30E,  -138 },  // 1.0e+059
-    { 0x1.3E9E4E4C2F345p+0199,  0x475CC53D4D2D8271,  -141 },  // 1.0e+060
-    { 0x1.8E45E1DF3B016p+0202,  0x722E086215159D82,  -145 },  // 1.0e+061
-    { 0x1.F1D75A5709C1Bp+0205,  0x5B5806B4DDAAE468,  -148 },  // 1.0e+062
-    { 0x1.3726987666191p+0209,  0x49133890B1558386,  -151 },  // 1.0e+063
-    { 0x1.84F03E93FF9F5p+0212,  0x74EB8DB44EEF38D7,  -155 },  // 1.0e+064
-    { 0x1.E62C4E38FF873p+0215,  0x5D893E29D8BF60AC,  -158 },  // 1.0e+065
-    { 0x1.2FDBB0E39FB48p+0219,  0x4AD431BB13CC4D56,  -161 },  // 1.0e+066
-    { 0x1.7BD29D1C87A1Ap+0222,  0x77B9E92B52E07BBE,  -165 },  // 1.0e+067
-    { 0x1.DAC74463A98A0p+0225,  0x5FC7EDBC424D2FCB,  -168 },  // 1.0e+068
-    { 0x1.28BC8ABE49F64p+0229,  0x4C9FF163683DBFD5,  -171 },  // 1.0e+069
-    { 0x1.72EBAD6DDC73Dp+0232,  0x7A998238A6C932EF,  -175 },  // 1.0e+070
-    { 0x1.CFA698C95390Cp+0235,  0x6214682D523A8F26,  -178 },  // 1.0e+071
-    { 0x1.21C81F7DD43A8p+0239,  0x4E76B9BDDB620C1E,  -181 },  // 1.0e+072
-    { 0x1.6A3A275D49492p+0242,  0x7D8AC2C95F034697,  -185 },  // 1.0e+073
-    { 0x1.C4C8B1349B9B6p+0245,  0x646F023AB2690545,  -188 },  // 1.0e+074
-    { 0x1.1AFD6EC0E1412p+0249,  0x5058CE955B87376B,  -191 },  // 1.0e+075
-    { 0x1.61BCCA7119916p+0252,  0x40470BAAAF9F5F88,  -194 },  // 1.0e+076
-    { 0x1.BA2BFD0D5FF5Cp+0255,  0x66D812AAB29898DB,  -198 },  // 1.0e+077
-    { 0x1.145B7E285BF99p+0259,  0x524675555BAD4715,  -201 },  // 1.0e+078
-    { 0x1.59725DB272F80p+0262,  0x41D1F7777C8A9F44,  -204 },  // 1.0e+079
-    { 0x1.AFCEF51F0FB5Fp+0265,  0x694FF258C7443207,  -208 },  // 1.0e+080
-    { 0x1.0DE1593369D1Cp+0269,  0x543FF513D29CF4D2,  -211 },  // 1.0e+081
-    { 0x1.5159AF8044463p+0272,  0x43665DA9754A5D75,  -214 },  // 1.0e+082
-    { 0x1.A5B01B605557Bp+0275,  0x6BD6FC425543C8BB,  -218 },  // 1.0e+083
-    { 0x1.078E111C3556Dp+0279,  0x5645969B77696D62,  -221 },  // 1.0e+084
-    { 0x1.4971956342AC8p+0282,  0x4504787C5F878AB5,  -224 },  // 1.0e+085
-    { 0x1.9BCDFABC1357Ap+0285,  0x6E6D8D93CC0C1122,  -228 },  // 1.0e+086
-    { 0x1.0160BCB58C16Dp+0289,  0x5857A4763CD6741B,  -231 },  // 1.0e+087
-    { 0x1.41B8EBE2EF1C8p+0292,  0x46AC8391CA4529AF,  -234 },  // 1.0e+088
-    { 0x1.922726DBAAE3Ap+0295,  0x711405B6106EA919,  -238 },  // 1.0e+089
-    { 0x1.F6B0F092959C8p+0298,  0x5A766AF80D255414,  -241 },  // 1.0e+090
-    { 0x1.3A2E965B9D81Dp+0302,  0x485EBBF9A41DDCDC,  -244 },  // 1.0e+091
-    { 0x1.88BA3BF284E24p+0305,  0x73CAC65C39C96161,  -248 },  // 1.0e+092
-    { 0x1.EAE8CAEF261ADp+0308,  0x5CA23849C7D44DE7,  -251 },  // 1.0e+093
-    { 0x1.32D17ED577D0Cp+0312,  0x4A1B603B06437185,  -254 },  // 1.0e+094
-    { 0x1.7F85DE8AD5C4Fp+0315,  0x76923391A39F1C09,  -258 },  // 1.0e+095
-    { 0x1.DF67562D8B363p+0318,  0x5EDB5C7482E5B007,  -261 },  // 1.0e+096
-    { 0x1.2BA095DC7701Ep+0322,  0x4BE2B05D35848CD2,  -264 },  // 1.0e+097
-    { 0x1.7688BB5394C26p+0325,  0x796AB3C855A0E151,  -268 },  // 1.0e+098
-    { 0x1.D42AEA2879F2Fp+0328,  0x6122296D114D810D,  -271 },  // 1.0e+099
-    { 0x1.249AD2594C37Dp+0332,  0x4DB4EDF0DAA4673E,  -274 },  // 1.0e+100
-    { 0x1.6DC186EF9F45Dp+0335,  0x7C54AFE7C43A3ECA,  -278 },  // 1.0e+101
-    { 0x1.C931E8AB87174p+0338,  0x6376F31FD02E98A1,  -281 },  // 1.0e+102
-    { 0x1.1DBF316B346E8p+0342,  0x4F925C1973587A1B,  -284 },  // 1.0e+103
-    { 0x1.652EFDC6018A2p+0345,  0x7F50935BEBC0C35E,  -288 },  // 1.0e+104
-    { 0x1.BE7ABD3781ECBp+0348,  0x65DA0F7CBC9A35E5,  -291 },  // 1.0e+105
-    { 0x1.170CB642B133Fp+0352,  0x517B3F96FD482B1D,  -294 },  // 1.0e+106
-    { 0x1.5CCFE3D35D80Fp+0355,  0x412F66126439BC17,  -297 },  // 1.0e+107
-    { 0x1.B403DCC834E12p+0358,  0x684BD683D38F9359,  -301 },  // 1.0e+108
-    { 0x1.108269FD210CCp+0362,  0x536FDECFDC72DC47,  -304 },  // 1.0e+109
-    { 0x1.54A3047C694FEp+0365,  0x42BFE57316C249D2,  -307 },  // 1.0e+110
-    { 0x1.A9CBC59B83A3Ep+0368,  0x6ACCA251BE03A951,  -311 },  // 1.0e+111
-    { 0x1.0A1F5B8132467p+0372,  0x557081DAFE695440,  -314 },  // 1.0e+112
-    { 0x1.4CA732617ED80p+0375,  0x445A017BFEBAA9CD,  -317 },  // 1.0e+113
-    { 0x1.9FD0FEF9DE8E0p+0378,  0x6D5CCF2CCAC442E2,  -321 },  // 1.0e+114
-    { 0x1.03E29F5C2B18Cp+0382,  0x577D728A3BD03581,  -324 },  // 1.0e+115
-    { 0x1.44DB473335DEFp+0385,  0x45FDF53B630CF79B,  -327 },  // 1.0e+116
-    { 0x1.961219000356Bp+0388,  0x6FFCBB923814BF5E,  -331 },  // 1.0e+117
-    { 0x1.FB969F40042C6p+0391,  0x5996FC74F9AA32B2,  -334 },  // 1.0e+118
-    { 0x1.3D3E2388029BCp+0395,  0x47ABFD2A6154F55B,  -337 },  // 1.0e+119
-    { 0x1.8C8DAC6A0342Bp+0398,  0x72ACC843CEEE555E,  -341 },  // 1.0e+120
-    { 0x1.EFB1178484135p+0401,  0x5BBD6D030BF1DDE5,  -344 },  // 1.0e+121
-    { 0x1.35CEAEB2D28C1p+0405,  0x49645735A327E4B7,  -347 },  // 1.0e+122
-    { 0x1.83425A5F872F2p+0408,  0x756D5855D1D96DF2,  -351 },  // 1.0e+123
-    { 0x1.E412F0F768FAEp+0411,  0x5DF11377DB1457F5,  -354 },  // 1.0e+124
-    { 0x1.2E8BD69AA19CDp+0415,  0x4B2742C648DD132A,  -357 },  // 1.0e+125
-    { 0x1.7A2ECC414A040p+0418,  0x783ED13D4161B844,  -361 },  // 1.0e+126
-    { 0x1.D8BA7F519C850p+0421,  0x603240FDCDE7C69C,  -364 },  // 1.0e+127
-    { 0x1.27748F9301D32p+0425,  0x4CF500CB0B1FD217,  -367 },  // 1.0e+128
-    { 0x1.7151B377C247Fp+0428,  0x7B219ADE7832E9BE,  -371 },  // 1.0e+129
-    { 0x1.CDA62055B2D9Ep+0431,  0x628148B1F9C25498,  -374 },  // 1.0e+130
-    { 0x1.2087D4358FC83p+0435,  0x4ECDD3C1949B76E0,  -377 },  // 1.0e+131
-    { 0x1.68A9C942F3BA4p+0438,  0x7E161F9C20F8BE33,  -381 },  // 1.0e+132
-    { 0x1.C2D43B93B0A8Cp+0441,  0x64DE7FB01A609829,  -384 },  // 1.0e+133
-    { 0x1.19C4A53C4E698p+0445,  0x50B1FFC0151A1354,  -387 },  // 1.0e+134
-    { 0x1.6035CE8B6203Ep+0448,  0x408E66334414DC43,  -390 },  // 1.0e+135
-    { 0x1.B843422E3A84Dp+0451,  0x674A3D1ED354939F,  -394 },  // 1.0e+136
-    { 0x1.132A095CE4930p+0455,  0x52A1CA7F0F76DC7F,  -397 },  // 1.0e+137
-    { 0x1.57F48BB41DB7Cp+0458,  0x421B0865A5F8B065,  -400 },  // 1.0e+138
-    { 0x1.ADF1AEA12525Bp+0461,  0x69C4DA3C3CC11A3C,  -404 },  // 1.0e+139
-    { 0x1.0CB70D24B7379p+0465,  0x549D7B6363CDAE96,  -407 },  // 1.0e+140
-    { 0x1.4FE4D06DE5057p+0468,  0x43B12F82B63E2545,  -410 },  // 1.0e+141
-    { 0x1.A3DE04895E46Dp+0471,  0x6C4EB26ABD303BA2,  -414 },  // 1.0e+142
-    { 0x1.066AC2D5DAEC4p+0475,  0x56A55B889759C94E,  -417 },  // 1.0e+143
-    { 0x1.4805738B51A75p+0478,  0x45511606DF7B0772,  -420 },  // 1.0e+144
-    { 0x1.9A06D06E26113p+0481,  0x6EE8233E325E7250,  -424 },  // 1.0e+145
-    { 0x1.00444244D7CACp+0485,  0x58B9B5CB5B7EC1D9,  -427 },  // 1.0e+146
-    { 0x1.405552D60DBD7p+0488,  0x46FAF7D5E2CBCE47,  -430 },  // 1.0e+147
-    { 0x1.906AA78B912CCp+0491,  0x71918C896ADFB073,  -434 },  // 1.0e+148
-    { 0x1.F485516E7577Fp+0494,  0x5ADAD6D4557FC05C,  -437 },  // 1.0e+149
-    { 0x1.38D352E5096B0p+0498,  0x48AF1243779966B0,  -440 },  // 1.0e+150
-    { 0x1.8708279E4BC5Bp+0501,  0x744B506BF28F0AB3,  -444 },  // 1.0e+151
-    { 0x1.E8CA3185DEB72p+0504,  0x5D090D2328726EF5,  -447 },  // 1.0e+152
-    { 0x1.317E5EF3AB328p+0508,  0x4A6DA41C205B8BF7,  -450 },  // 1.0e+153
-    { 0x1.7DDDF6B095FF1p+0511,  0x7715D36033C5ACBF,  -454 },  // 1.0e+154
-    { 0x1.DD55745CBB7EDp+0514,  0x5F44A919C3048A32,  -457 },  // 1.0e+155
-    { 0x1.2A5568B9F52F5p+0518,  0x4C36EDAE359D3B5B,  -460 },  // 1.0e+156
-    { 0x1.74EAC2E8727B2p+0521,  0x79F17C49EF61F893,  -464 },  // 1.0e+157
-    { 0x1.D22573A28F19Ep+0524,  0x618DFD07F2B4C6DC,  -467 },  // 1.0e+158
-    { 0x1.2357684599703p+0528,  0x4E0B30D328909F16,  -470 },  // 1.0e+159
-    { 0x1.6C2D4256FFCC3p+0531,  0x7CDEB4850DB431BD,  -474 },  // 1.0e+160
-    { 0x1.C73892ECBFBF4p+0534,  0x63E55D373E29C164,  -477 },  // 1.0e+161
-    { 0x1.1C835BD3F7D79p+0538,  0x4FEAB0F8FE87CDE9,  -480 },  // 1.0e+162
-    { 0x1.63A432C8F5CD7p+0541,  0x7FDDE7F4CA72E30F,  -484 },  // 1.0e+163
-    { 0x1.BC8D3F7B3340Cp+0544,  0x664B1FF7085BE8D9,  -487 },  // 1.0e+164
-    { 0x1.15D847AD00088p+0548,  0x51D5B32C06AFED7A,  -490 },  // 1.0e+165
-    { 0x1.5B4E5998400AAp+0551,  0x4177C2899EF32462,  -493 },  // 1.0e+166
-    { 0x1.B221EFFE500D4p+0554,  0x68BF9DA8FE51D3D0,  -497 },  // 1.0e+167
-    { 0x1.0F5535FEF2085p+0558,  0x53CC7E20CB74A973,  -500 },  // 1.0e+168
-    { 0x1.532A837EAE8A6p+0561,  0x4309FE80A2C3BAC2,  -503 },  // 1.0e+169
-    { 0x1.A7F5245E5A2CFp+0564,  0x6B4330CDD1392AD1,  -507 },  // 1.0e+170
-    { 0x1.08F936BAF85C2p+0568,  0x55CF5A3E40FA88A7,  -510 },  // 1.0e+171
-    { 0x1.4B378469B6732p+0571,  0x44A5E1CB672ED3B9,  -513 },  // 1.0e+172
-    { 0x1.9E056584240FEp+0574,  0x6DD636123EB152C1,  -517 },  // 1.0e+173
-    { 0x1.02C35F729689Fp+0578,  0x57DE91A832277567,  -520 },  // 1.0e+174
-    { 0x1.4374374F3C2C7p+0581,  0x464BA7B9C1B92AB9,  -523 },  // 1.0e+175
-    { 0x1.945145230B378p+0584,  0x70790C5C6928445C,  -527 },  // 1.0e+176
-    { 0x1.F965966BCE056p+0587,  0x59FA7049EDB9D049,  -530 },  // 1.0e+177
-    { 0x1.3BDF7E0360C36p+0591,  0x47FB8D07F161736E,  -533 },  // 1.0e+178
-    { 0x1.8AD75D8438F44p+0594,  0x732C14D98235857D,  -537 },  // 1.0e+179
-    { 0x1.ED8D34E547314p+0597,  0x5C2343E134F79DFD,  -540 },  // 1.0e+180
-    { 0x1.3478410F4C7EDp+0601,  0x49B5CFE75D92E4CA,  -543 },  // 1.0e+181
-    { 0x1.819651531F9E8p+0604,  0x75EFB30BC8EB07AB,  -547 },  // 1.0e+182
-    { 0x1.E1FBE5A7E7862p+0607,  0x5E595C096D88D2EF,  -550 },  // 1.0e+183
-    { 0x1.2D3D6F88F0B3Dp+0611,  0x4B7AB0078AD3DBF2,  -553 },  // 1.0e+184
-    { 0x1.788CCB6B2CE0Dp+0614,  0x78C44CD8DE1FC650,  -557 },  // 1.0e+185
-    { 0x1.D6AFFE45F8190p+0617,  0x609D0A4718196B73,  -560 },  // 1.0e+186
-    { 0x1.262DFEEBBB0FAp+0621,  0x4D4A6E9F467ABC5C,  -563 },  // 1.0e+187
-    { 0x1.6FB97EA6A9D38p+0624,  0x7BAA4A9870C46094,  -567 },  // 1.0e+188
-    { 0x1.CBA7DE5054486p+0627,  0x62EEA2138D69E6DD,  -570 },  // 1.0e+189
-    { 0x1.1F48EAF234AD4p+0631,  0x4F254E760ABB1F17,  -573 },  // 1.0e+190
-    { 0x1.671B25AEC1D89p+0634,  0x7EA21723445E9825,  -577 },  // 1.0e+191
-    { 0x1.C0E1EF1A724EBp+0637,  0x654E78E9037EE01D,  -580 },  // 1.0e+192
-    { 0x1.188D357087713p+0641,  0x510B93ED9C658017,  -583 },  // 1.0e+193
-    { 0x1.5EB082CCA94D8p+0644,  0x40D60FF149EACCDF,  -586 },  // 1.0e+194
-    { 0x1.B65CA37FD3A0Ep+0647,  0x67BCE64EDCAAE166,  -590 },  // 1.0e+195
-    { 0x1.11F9E62FE4449p+0651,  0x52FD850BE3BBE784,  -593 },  // 1.0e+196
-    { 0x1.56785FBBDD55Bp+0654,  0x42646A6FE9631F9D,  -596 },  // 1.0e+197
-    { 0x1.AC1677AAD4AB1p+0657,  0x6A3A43E642383295,  -600 },  // 1.0e+198
-    { 0x1.0B8E0ACAC4EAFp+0661,  0x54FB698501C68EDE,  -603 },  // 1.0e+199
-    { 0x1.4E718D7D7625Bp+0664,  0x43FC546A67D20BE4,  -606 },  // 1.0e+200
-    { 0x1.A20DF0DCD3AF1p+0667,  0x6CC6ED770C83463B,  -610 },  // 1.0e+201
-    { 0x1.0548B68A044D7p+0671,  0x57058AC5A39C382F,  -613 },  // 1.0e+202
-    { 0x1.469AE42C8560Dp+0674,  0x459E089E1C7CF9BF,  -616 },  // 1.0e+203
-    { 0x1.98419D37A6B90p+0677,  0x6F6340FCFA618F98,  -620 },  // 1.0e+204
-    { 0x1.FE52048590673p+0680,  0x591C33FD951AD946,  -623 },  // 1.0e+205
-    { 0x1.3EF342D37A408p+0684,  0x4749C33144157A9F,  -626 },  // 1.0e+206
-    { 0x1.8EB0138858D0Ap+0687,  0x720F9EB539BBF765,  -630 },  // 1.0e+207
-    { 0x1.F25C186A6F04Dp+0690,  0x5B3FB22A94965F84,  -633 },  // 1.0e+208
-    { 0x1.37798F4285630p+0694,  0x48FFC1BBAA11E603,  -636 },  // 1.0e+209
-    { 0x1.8557F31326BBCp+0697,  0x74CC692C434FD66B,  -640 },  // 1.0e+210
-    { 0x1.E6ADEFD7F06ABp+0700,  0x5D705423690CAB89,  -643 },  // 1.0e+211
-    { 0x1.302CB5E6F642Bp+0704,  0x4AC0434F873D5607,  -646 },  // 1.0e+212
-    { 0x1.7C37E360B3D36p+0707,  0x779A054C0B955672,  -650 },  // 1.0e+213
-    { 0x1.DB45DC38E0C83p+0710,  0x5FAE6AA33C77785B,  -653 },  // 1.0e+214
-    { 0x1.290BA9A38C7D2p+0714,  0x4C8B888296C5F9E2,  -656 },  // 1.0e+215
-    { 0x1.734E940C6F9C6p+0717,  0x7A78DA6A8AD65C9D,  -660 },  // 1.0e+216
-    { 0x1.D022390F8B838p+0720,  0x61FA48553BDEB07E,  -663 },  // 1.0e+217
-    { 0x1.221563A9B7323p+0724,  0x4E61D37763188D31,  -666 },  // 1.0e+218
-    { 0x1.6A9ABC9424FECp+0727,  0x7D6952589E8DAEB6,  -670 },  // 1.0e+219
-    { 0x1.C5416BB92E3E7p+0730,  0x645441E07ED7BEF8,  -673 },  // 1.0e+220
-    { 0x1.1B48E353BCE70p+0734,  0x504367E6CBDFCBF9,  -676 },  // 1.0e+221
-    { 0x1.621B1C28AC20Cp+0737,  0x4035ECB8A3196FFB,  -679 },  // 1.0e+222
-    { 0x1.BAA1E332D728Fp+0740,  0x66BCADF43828B32B,  -683 },  // 1.0e+223
-    { 0x1.14A52DFFC679Ap+0744,  0x52308B29C686F5BC,  -686 },  // 1.0e+224
-    { 0x1.59CE797FB8180p+0747,  0x41C06F549ED25E30,  -689 },  // 1.0e+225
-    { 0x1.B04217DFA61E0p+0750,  0x6933E554315096B3,  -693 },  // 1.0e+226
-    { 0x1.0E294EEBC7D2Cp+0754,  0x542984435AA6DEF5,  -696 },  // 1.0e+227
-    { 0x1.51B3A2A6B9C77p+0757,  0x435469CF7BB8B25E,  -699 },  // 1.0e+228
-    { 0x1.A6208B5068395p+0760,  0x6BBA42E592C11D63,  -703 },  // 1.0e+229
-    { 0x1.07D457124123Dp+0764,  0x562E9BEADBCDB11C,  -706 },  // 1.0e+230
-    { 0x1.49C96CD6D16CCp+0767,  0x44F216557CA48DB0,  -709 },  // 1.0e+231
-    { 0x1.9C3BC80C85C7Fp+0770,  0x6E5023BBFAA0E2B3,  -713 },  // 1.0e+232
-    { 0x1.01A55D07D39D0p+0774,  0x58401C96621A4EF6,  -716 },  // 1.0e+233
-    { 0x1.420EB449C8843p+0777,  0x4699B0784E7B725E,  -719 },  // 1.0e+234
-    { 0x1.9292615C3AA54p+0780,  0x70F5E726E3F8B6FD,  -723 },  // 1.0e+235
-    { 0x1.F736F9B3494E9p+0783,  0x5A5E5285832D5F31,  -726 },  // 1.0e+236
-    { 0x1.3A825C100DD12p+0787,  0x484B75379C244C27,  -729 },  // 1.0e+237
-    { 0x1.8922F31411456p+0790,  0x73ABEEBF603A1372,  -733 },  // 1.0e+238
-    { 0x1.EB6BAFD91596Cp+0793,  0x5C898BCC4CFB42C2,  -736 },  // 1.0e+239
-    { 0x1.33234DE7AD7E3p+0797,  0x4A07A309D72F689B,  -739 },  // 1.0e+240
-    { 0x1.7FEC216198DDCp+0800,  0x76729E762518A75E,  -743 },  // 1.0e+241
-    { 0x1.DFE729B9FF153p+0803,  0x5EC2185E8413B918,  -746 },  // 1.0e+242
-    { 0x1.2BF07A143F6D4p+0807,  0x4BCE79E536762DAD,  -749 },  // 1.0e+243
-    { 0x1.76EC98994F489p+0810,  0x794A5CA1F0BD15E2,  -753 },  // 1.0e+244
-    { 0x1.D4A7BEBFA31ABp+0813,  0x61084A1B26FDAB1B,  -756 },  // 1.0e+245
-    { 0x1.24E8D737C5F0Bp+0817,  0x4DA03B48EBFE227C,  -759 },  // 1.0e+246
-    { 0x1.6E230D05B76CEp+0820,  0x7C33920E46636A60,  -763 },  // 1.0e+247
-    { 0x1.C9ABD04725481p+0823,  0x635C74D8384F884D,  -766 },  // 1.0e+248
-    { 0x1.1E0B622C774D1p+0827,  0x4F7D2A469372D370,  -769 },  // 1.0e+249
-    { 0x1.658E3AB795205p+0830,  0x7F2EAA0A85848581,  -773 },  // 1.0e+250
-    { 0x1.BEF1C9657A686p+0833,  0x65BEEE6ED136D134,  -776 },  // 1.0e+251
-    { 0x1.17571DDF6C814p+0837,  0x51658B8BDA9240F6,  -779 },  // 1.0e+252
-    { 0x1.5D2CE55747A19p+0840,  0x411E093CAEDB672B,  -782 },  // 1.0e+253
-    { 0x1.B4781EAD1989Fp+0843,  0x68300EC77E2BD845,  -786 },  // 1.0e+254
-    { 0x1.10CB132C2FF64p+0847,  0x5359A56C64EFE037,  -789 },  // 1.0e+255
-    { 0x1.54FDD7F73BF3Cp+0850,  0x42AE1DF050BFE693,  -792 },  // 1.0e+256
-    { 0x1.AA3D4DF50AF0Bp+0853,  0x6AB02FE6E79970EB,  -796 },  // 1.0e+257
-    { 0x1.0A6650B926D67p+0857,  0x5559BFEBEC7AC0BC,  -799 },  // 1.0e+258
-    { 0x1.4CFFE4E7708C1p+0860,  0x4447CCBCBD2F0096,  -802 },  // 1.0e+259
-    { 0x1.A03FDE214CAF1p+0863,  0x6D3FADFAC84B3424,  -806 },  // 1.0e+260
-    { 0x1.0427EAD4CFED7p+0867,  0x576624C8A03C29B6,  -809 },  // 1.0e+261
-    { 0x1.4531E58A03E8Cp+0870,  0x45EB50A08030215E,  -812 },  // 1.0e+262
-    { 0x1.967E5EEC84E2Fp+0873,  0x6FDEE76733803564,  -816 },  // 1.0e+263
-    { 0x1.FC1DF6A7A61BBp+0876,  0x597F1F85C2CCF783,  -819 },  // 1.0e+264
-    { 0x1.3D92BA28C7D15p+0880,  0x4798E6049BD72C69,  -822 },  // 1.0e+265
-    { 0x1.8CF768B2F9C5Ap+0883,  0x728E3CD42C8B7A42,  -826 },  // 1.0e+266
-    { 0x1.F03542DFB8371p+0886,  0x5BA4FD768A092E9B,  -829 },  // 1.0e+267
-    { 0x1.362149CBD3227p+0890,  0x4950CAC53B3A8BAF,  -832 },  // 1.0e+268
-    { 0x1.83A99C3EC7EB0p+0893,  0x754E113B91F745E5,  -836 },  // 1.0e+269
-    { 0x1.E494034E79E5Cp+0896,  0x5DD80DC941929E51,  -839 },  // 1.0e+270
-    { 0x1.2EDC82110C2FAp+0900,  0x4B133E3A9ADBB1DA,  -842 },  // 1.0e+271
-    { 0x1.7A93A2954F3B8p+0903,  0x781EC9F75E2C4FC4,  -846 },  // 1.0e+272
-    { 0x1.D9388B3AA30A6p+0906,  0x6018A192B1BD0C9C,  -849 },  // 1.0e+273
-    { 0x1.27C35704A5E68p+0910,  0x4CE0814227CA707D,  -852 },  // 1.0e+274
-    { 0x1.71B42CC5CF602p+0913,  0x7B00CED03FAA4D95,  -856 },  // 1.0e+275
-    { 0x1.CE2137F743382p+0916,  0x62670BD9CC883E11,  -859 },  // 1.0e+276
-    { 0x1.20D4C2FA8A031p+0920,  0x4EB8D647D6D364DA,  -862 },  // 1.0e+277
-    { 0x1.6909F3B92C83Ep+0923,  0x7DF48A0C8AEBD491,  -866 },  // 1.0e+278
-    { 0x1.C34C70A777A4Dp+0926,  0x64C3A1A3A25643A7,  -869 },  // 1.0e+279
-    { 0x1.1A0FC668AAC70p+0930,  0x509C814FB511CFB9,  -872 },  // 1.0e+280
-    { 0x1.6093B802D578Cp+0933,  0x407D343FC40E3FC7,  -875 },  // 1.0e+281
-    { 0x1.B8B8A6038AD6Fp+0936,  0x672EB9FFA016CC71,  -879 },  // 1.0e+282
-    { 0x1.137367C236C66p+0940,  0x528BC7FFB345705B,  -882 },  // 1.0e+283
-    { 0x1.585041B2C477Fp+0943,  0x42096CCC8F6AC048,  -885 },  // 1.0e+284
-    { 0x1.AE64521F7595Fp+0946,  0x69A8AE1418AACD41,  -889 },  // 1.0e+285
-    { 0x1.0CFEB353A97DBp+0950,  0x5486F1A9AD557101,  -892 },  // 1.0e+286
-    { 0x1.503E602893DD2p+0953,  0x439F27BAF1112734,  -895 },  // 1.0e+287
-    { 0x1.A44DF832B8D46p+0956,  0x6C31D92B1B4EA520,  -899 },  // 1.0e+288
-    { 0x1.06B0BB1FB384Cp+0960,  0x568E4755AF721DB3,  -902 },  // 1.0e+289
-    { 0x1.485CE9E7A065Fp+0963,  0x453E9F77BF8E7E29,  -905 },  // 1.0e+290
-    { 0x1.9A742461887F7p+0966,  0x6ECA98BF98E3FD0E,  -909 },  // 1.0e+291
-    { 0x1.008896BCF54FAp+0970,  0x58A213CC7A4FFDA5,  -912 },  // 1.0e+292
-    { 0x1.40AABC6C32A39p+0973,  0x46E80FD6C83FFE1D,  -915 },  // 1.0e+293
-    { 0x1.90D56B873F4C7p+0976,  0x71734C8AD9FFFCFC,  -919 },  // 1.0e+294
-    { 0x1.F50AC6690F1F9p+0979,  0x5AC2A3A247FFFD96,  -922 },  // 1.0e+295
-    { 0x1.3926BC01A973Cp+0983,  0x489BB61B6CCCCADF,  -925 },  // 1.0e+296
-    { 0x1.87706B0213D0Ap+0986,  0x742C569247AE1164,  -929 },  // 1.0e+297
-    { 0x1.E94C85C298C4Dp+0989,  0x5CF04541D2F1A783,  -932 },  // 1.0e+298
-    { 0x1.31CFD3999F7B0p+0993,  0x4A59D101758E1F9C,  -935 },  // 1.0e+299
-    { 0x1.7E43C8800759Cp+0996,  0x76F61B3588E365C7,  -939 },  // 1.0e+300
-    { 0x1.DDD4BAA009303p+0999,  0x5F2B48F7A0B5EB06,  -942 },  // 1.0e+301
-    { 0x1.2AA4F4A405BE2p+1003,  0x4C22A0C61A2B226B,  -945 },  // 1.0e+302
-    { 0x1.754E31CD072DAp+1006,  0x79D1013CF6AB6A45,  -949 },  // 1.0e+303
-    { 0x1.D2A1BE4048F91p+1009,  0x617400FD9222BB6A,  -952 },  // 1.0e+304
-    { 0x1.23A516E82D9BBp+1013,  0x4DF6673141B562BB,  -955 },  // 1.0e+305
-    { 0x1.6C8E5CA239029p+1016,  0x7CBD71E869223792,  -959 },  // 1.0e+306
-    { 0x1.C7B1F3CAC7434p+1019,  0x63CAC186BA81C60E,  -962 },  // 1.0e+307
-    { 0x1.1CCF385EBC8A0p+1023,  0x4FD5679EFB9B04D8,  -965 },  // 1.0e+308
+    {                       0,  0xDB68C2CA82ED2A06, +1133 },  // 1.0e-324
+    { 0x1.8000000000000p-1073,  0xAF87023B9BF0EE6B, +1130 },  // 1.0e-323
+    { 0x1.5000000000000p-1070,  0x8C6C01C9498D8B89, +1127 },  // 1.0e-322
+    { 0x1.9600000000000p-1067,  0xE0ACCFA875AF45A8, +1123 },  // 1.0e-321
+    { 0x1.FA40000000000p-1064,  0xB3BD72ED2AF29E20, +1120 },  // 1.0e-320
+    { 0x1.3C44000000000p-1060,  0x8FCAC257558EE4E7, +1117 },  // 1.0e-319
+    { 0x1.8B51800000000p-1057,  0xE61136F2227E3B0A, +1113 },  // 1.0e-318
+    { 0x1.EE25700000000p-1054,  0xB80DC58E81FE95A2, +1110 },  // 1.0e-317
+    { 0x1.34D7620000000p-1050,  0x933E37A534CBAAE8, +1107 },  // 1.0e-316
+    { 0x1.820D39C000000p-1047,  0xEB96BF6EBADF77D9, +1103 },  // 1.0e-315
+    { 0x1.E290881800000p-1044,  0xBC789925624C5FE1, +1100 },  // 1.0e-314
+    { 0x1.2D9A550CC0000p-1040,  0x96C6E0EAB509E64E, +1097 },  // 1.0e-313
+    { 0x1.7900EA4FE0000p-1037,  0xF13E34AABB430A16, +1093 },  // 1.0e-312
+    { 0x1.D74124E3D2000p-1034,  0xC0FE908895CF3B45, +1090 },  // 1.0e-311
+    { 0x1.2688B70E62C00p-1030,  0x9A65406D44A5C904, +1087 },  // 1.0e-310
+    { 0x1.702AE4D1FB5E0p-1027,  0xF70867153AA2DB39, +1083 },  // 1.0e-309
+    { 0x1.CC359E067A34Cp-1024,  0xC5A05277621BE294, +1080 },  // 1.0e-308
+    { 0x1.1FA182C40C60Ep-1020,  0x9E19DB92B4E31BAA, +1077 },  // 1.0e-307
+    { 0x1.6789E3750F791p-1017,  0xFCF62C1DEE382C43, +1073 },  // 1.0e-306
+    { 0x1.C16C5C5253576p-1014,  0xCA5E89B18B602369, +1070 },  // 1.0e-305
+    { 0x1.18E3B9B37416Ap-1010,  0xA1E53AF46F801C54, +1067 },  // 1.0e-304
+    { 0x1.5F1CA820511C4p-1007,  0x81842F29F2CCE376, +1064 },  // 1.0e-303
+    { 0x1.B6E3D22865635p-1004,  0xCF39E50FEAE16BF0, +1060 },  // 1.0e-302
+    { 0x1.124E63593F5E1p-1000,  0xA5C7EA73224DEFF4, +1057 },  // 1.0e-301
+    { 0x1.56E1FC2F8F359p-0997,  0x849FEEC281D7F329, +1054 },  // 1.0e-300
+    { 0x1.AC9A7B3B73030p-0994,  0xD433179D9C8CB842, +1050 },  // 1.0e-299
+    { 0x1.0BE08D0527E1Ep-0990,  0xA9C2794AE3A3C69B, +1047 },  // 1.0e-298
+    { 0x1.4ED8B04671DA5p-0987,  0x87CEC76F1C830549, +1044 },  // 1.0e-297
+    { 0x1.A28EDC580E50Ep-0984,  0xD94AD8B1C7380875, +1040 },  // 1.0e-296
+    { 0x1.059949B708F29p-0980,  0xADD57A27D29339F7, +1037 },  // 1.0e-295
+    { 0x1.46FF9C24CB2F3p-0977,  0x8B112E86420F6192, +1034 },  // 1.0e-294
+    { 0x1.98BF832DFDFB0p-0974,  0xDE81E40A034BCF50, +1030 },  // 1.0e-293
+    { 0x1.FEEF63F97D79Cp-0971,  0xB201833B35D63F74, +1027 },  // 1.0e-292
+    { 0x1.3F559E7BEE6C2p-0967,  0x8E679C2F5E44FF90, +1024 },  // 1.0e-291
+    { 0x1.8F2B061AEA072p-0964,  0xE3D8F9E563A198E6, +1020 },  // 1.0e-290
+    { 0x1.F2F5C7A1A488Ep-0961,  0xB6472E511C81471E, +1017 },  // 1.0e-289
+    { 0x1.37D99CC506D59p-0957,  0x91D28B7416CDD27F, +1014 },  // 1.0e-288
+    { 0x1.85D003F6488AFp-0954,  0xE950DF20247C83FE, +1010 },  // 1.0e-287
+    { 0x1.E74404F3DAADBp-0951,  0xBAA718E68396CFFE, +1007 },  // 1.0e-286
+    { 0x1.308A831868AC9p-0947,  0x95527A5202DF0CCC, +1004 },  // 1.0e-285
+    { 0x1.7CAD23DE82D7Bp-0944,  0xEEEA5D5004981479, +1000 },  // 1.0e-284
+    { 0x1.DBD86CD6238DAp-0941,  0xBF21E44003ACDD2D,  +997 },  // 1.0e-283
+    { 0x1.29674405D6388p-0937,  0x98E7E9CCCFBD7DBE,  +994 },  // 1.0e-282
+    { 0x1.73C115074BC6Ap-0934,  0xF4A642E14C6262C9,  +990 },  // 1.0e-281
+    { 0x1.D0B15A491EB85p-0931,  0xC3B8358109E84F08,  +987 },  // 1.0e-280
+    { 0x1.226ED86DB3333p-0927,  0x9C935E00D4B9D8D3,  +984 },  // 1.0e-279
+    { 0x1.6B0A8E8920000p-0924,  0xFA856334878FC151,  +980 },  // 1.0e-278
+    { 0x1.C5CD322B68000p-0921,  0xC86AB5C39FA63441,  +977 },  // 1.0e-277
+    { 0x1.1BA03F5B21000p-0917,  0xA0555E361951C367,  +974 },  // 1.0e-276
+    { 0x1.62884F31E9400p-0914,  0x80444B5E7AA7CF86,  +971 },  // 1.0e-275
+    { 0x1.BB2A62FE63900p-0911,  0xCD3A1230C43FB270,  +967 },  // 1.0e-274
+    { 0x1.14FA7DDEFE3A0p-0907,  0xA42E74F3D032F526,  +964 },  // 1.0e-273
+    { 0x1.5A391D56BDC88p-0904,  0x83585D8FD9C25DB8,  +961 },  // 1.0e-272
+    { 0x1.B0C764AC6D3AAp-0901,  0xD226FC195C6A2F8D,  +957 },  // 1.0e-271
+    { 0x1.0E7C9EEBC444Ap-0897,  0xA81F301449EE8C71,  +954 },  // 1.0e-270
+    { 0x1.521BC6A6B555Dp-0894,  0x867F59A9D4BED6C1,  +951 },  // 1.0e-269
+    { 0x1.A6A2B85062AB4p-0891,  0xD732290FBACAF134,  +947 },  // 1.0e-268
+    { 0x1.0825B3323DAB1p-0887,  0xAC2820D9623BF42A,  +944 },  // 1.0e-267
+    { 0x1.4A2F1FFECD15Dp-0884,  0x89B9B3E11B6329BB,  +941 },  // 1.0e-266
+    { 0x1.9CBAE7FE805B4p-0881,  0xDC5C5301C56B75F8,  +937 },  // 1.0e-265
+    { 0x1.01F4D0FF10390p-0877,  0xB049DC016ABC5E60,  +934 },  // 1.0e-264
+    { 0x1.4272053ED4474p-0874,  0x8D07E33455637EB3,  +931 },  // 1.0e-263
+    { 0x1.930E868E89591p-0871,  0xE1A63853BBD26452,  +927 },  // 1.0e-262
+    { 0x1.F7D228322BAF6p-0868,  0xB484F9DC9641E9DB,  +924 },  // 1.0e-261
+    { 0x1.3AE3591F5B4DAp-0864,  0x906A617D450187E3,  +921 },  // 1.0e-260
+    { 0x1.899C2F6732210p-0861,  0xE7109BFBA19C0C9E,  +917 },  // 1.0e-259
+    { 0x1.EC033B40FEA94p-0858,  0xB8DA1662E7B00A18,  +914 },  // 1.0e-258
+    { 0x1.338205089F29Dp-0854,  0x93E1AB8252F33B46,  +911 },  // 1.0e-257
+    { 0x1.8062864AC6F44p-0851,  0xEC9C459D51852BA3,  +907 },  // 1.0e-256
+    { 0x1.E07B27DD78B14p-0848,  0xBD49D14AA79DBC83,  +904 },  // 1.0e-255
+    { 0x1.2C4CF8EA6B6EDp-0844,  0x976E41088617CA02,  +901 },  // 1.0e-254
+    { 0x1.77603725064A8p-0841,  0xF24A01A73CF2DCD0,  +897 },  // 1.0e-253
+    { 0x1.D53844EE47DD2p-0838,  0xC1D4CE1F63F57D73,  +894 },  // 1.0e-252
+    { 0x1.25432B14ECEA3p-0834,  0x9B10A4E5E9913129,  +891 },  // 1.0e-251
+    { 0x1.6E93F5DA2824Cp-0831,  0xF81AA16FDC1B81DB,  +887 },  // 1.0e-250
+    { 0x1.CA38F350B22DFp-0828,  0xC67BB4597CE2CE49,  +884 },  // 1.0e-249
+    { 0x1.1E6398126F5CCp-0824,  0x9EC95D1463E8A507,  +881 },  // 1.0e-248
+    { 0x1.65FC7E170B33Ep-0821,  0xFE0EFB53D30DD4D8,  +877 },  // 1.0e-247
+    { 0x1.BF7B9D9CCE00Ep-0818,  0xCB3F2F7642717714,  +874 },  // 1.0e-246
+    { 0x1.17AD428200C09p-0814,  0xA298F2C501F45F43,  +871 },  // 1.0e-245
+    { 0x1.5D98932280F0Bp-0811,  0x8213F56A67F6B29C,  +868 },  // 1.0e-244
+    { 0x1.B4FEB7EB212CEp-0808,  0xD01FEF10A657842D,  +864 },  // 1.0e-243
+    { 0x1.111F32F2F4BC1p-0804,  0xA67FF273B8460357,  +861 },  // 1.0e-242
+    { 0x1.5566FFAFB1EB1p-0801,  0x8533285C936B35DF,  +858 },  // 1.0e-241
+    { 0x1.AAC0BF9B9E65Dp-0798,  0xD51EA6FA85785632,  +854 },  // 1.0e-240
+    { 0x1.0AB877C142FFAp-0794,  0xAA7EEBFB9DF9DE8E,  +851 },  // 1.0e-239
+    { 0x1.4D6695B193BF9p-0791,  0x8865899617FB1872,  +848 },  // 1.0e-238
+    { 0x1.A0C03B1DF8AF7p-0788,  0xDA3C0F568CC4F3E9,  +844 },  // 1.0e-237
+    { 0x1.047824F2BB6DAp-0784,  0xAE9672ABA3D0C321,  +841 },  // 1.0e-236
+    { 0x1.45962E2F6A491p-0781,  0x8BAB8EEFB6409C1B,  +838 },  // 1.0e-235
+    { 0x1.96FBB9BB44DB5p-0778,  0xDF78E4B2BD342CF7,  +834 },  // 1.0e-234
+    { 0x1.FCBAA82A16122p-0775,  0xB2C71D5BCA9023F9,  +831 },  // 1.0e-233
+    { 0x1.3DF4A91A4DCB5p-0771,  0x8F05B1163BA6832E,  +828 },  // 1.0e-232
+    { 0x1.8D71D360E13E3p-0768,  0xE4D5E82392A40516,  +824 },  // 1.0e-231
+    { 0x1.F0CE4839198DBp-0765,  0xB7118682DBB66A78,  +821 },  // 1.0e-230
+    { 0x1.3680ED23AFF89p-0761,  0x92746B9BE2F8552D,  +818 },  // 1.0e-229
+    { 0x1.8421286C9BF6Bp-0758,  0xEA53DF5FD18D5514,  +814 },  // 1.0e-228
+    { 0x1.E5297287C2F46p-0755,  0xBB764C4CA7A44410,  +811 },  // 1.0e-227
+    { 0x1.2F39E794D9D8Cp-0751,  0x95F83D0A1FB69CDA,  +808 },  // 1.0e-226
+    { 0x1.7B08617A104EFp-0748,  0xEFF394DCFF8A948F,  +804 },  // 1.0e-225
+    { 0x1.D9CA79D89462Ap-0745,  0xBFF610B0CC6EDD40,  +801 },  // 1.0e-224
+    { 0x1.281E8C275CBDBp-0741,  0x9991A6F3D6BF1766,  +798 },  // 1.0e-223
+    { 0x1.72262F3133ED1p-0738,  0xF5B5D7EC8ACB58A3,  +794 },  // 1.0e-222
+    { 0x1.CEAFBAFD80E85p-0735,  0xC491798A08A2AD4F,  +791 },  // 1.0e-221
+    { 0x1.212DD4DE70914p-0731,  0x9D412E0806E88AA6,  +788 },  // 1.0e-220
+    { 0x1.69794A160CB58p-0728,  0xFB9B7CD9A4A7443D,  +784 },  // 1.0e-219
+    { 0x1.C3D79C9B8FE2Ep-0725,  0xC94930AE1D529CFD,  +781 },  // 1.0e-218
+    { 0x1.1A66C1E139EDDp-0721,  0xA1075A24E4421731,  +778 },  // 1.0e-217
+    { 0x1.6100725988694p-0718,  0x80D2AE83E9CE78F4,  +775 },  // 1.0e-216
+    { 0x1.B9408EEFEA839p-0715,  0xCE1DE40642E3F4BA,  +771 },  // 1.0e-215
+    { 0x1.13C85955F2924p-0711,  0xA4E4B66B68B65D61,  +768 },  // 1.0e-214
+    { 0x1.58BA6FAB6F36Dp-0708,  0x83EA2B892091E44E,  +765 },  // 1.0e-213
+    { 0x1.AEE90B964B048p-0705,  0xD31045A8341CA07D,  +761 },  // 1.0e-212
+    { 0x1.0D51A73DEEE2Dp-0701,  0xA8D9D1535CE3B397,  +758 },  // 1.0e-211
+    { 0x1.50A6110D6A9B8p-0698,  0x8714A775E3E95C79,  +755 },  // 1.0e-210
+    { 0x1.A4CF9550C5426p-0695,  0xD8210BEFD30EFA5B,  +751 },  // 1.0e-209
+    { 0x1.0701BD527B498p-0691,  0xACE73CBFDC0BFB7C,  +748 },  // 1.0e-208
+    { 0x1.48C22CA71A1BEp-0688,  0x8A5296FFE33CC930,  +745 },  // 1.0e-207
+    { 0x1.9AF2B7D0E0A2Dp-0685,  0xDD50F1996B947519,  +741 },  // 1.0e-206
+    { 0x1.00D7B2E28C65Cp-0681,  0xB10D8E1456105DAE,  +738 },  // 1.0e-205
+    { 0x1.410D9F9B2F7F3p-0678,  0x8DA471A9DE737E25,  +735 },  // 1.0e-204
+    { 0x1.91510781FB5F0p-0675,  0xE2A0B5DC971F303B,  +731 },  // 1.0e-203
+    { 0x1.F5A549627A36Cp-0672,  0xB54D5E4A127F59C9,  +728 },  // 1.0e-202
+    { 0x1.39874DDD8C624p-0668,  0x910AB1D4DB9914A1,  +725 },  // 1.0e-201
+    { 0x1.87E92154EF7ADp-0665,  0xE8111C87C5C1BA9A,  +721 },  // 1.0e-200
+    { 0x1.E9E369AA2B598p-0662,  0xB9A74A0637CE2EE2,  +718 },  // 1.0e-199
+    { 0x1.322E220A5B17Fp-0658,  0x9485D4D1C63E8BE8,  +715 },  // 1.0e-198
+    { 0x1.7EB9AA8CF1DDFp-0655,  0xEDA2EE1C7064130D,  +711 },  // 1.0e-197
+    { 0x1.DE6815302E556p-0652,  0xBE1BF1B059E9A8D7,  +708 },  // 1.0e-196
+    { 0x1.2B010D3E1CF56p-0648,  0x98165AF37B2153DF,  +705 },  // 1.0e-195
+    { 0x1.75C1508DA432Bp-0645,  0xF356F7EBF83552FF,  +701 },  // 1.0e-194
+    { 0x1.D331A4B10D3F6p-0642,  0xC2ABF989935DDBFF,  +698 },  // 1.0e-193
+    { 0x1.23FF06EEA847Ap-0638,  0x9BBCC7A142B17CCC,  +695 },  // 1.0e-192
+    { 0x1.6CFEC8AA52598p-0635,  0xF92E0C3537826146,  +691 },  // 1.0e-191
+    { 0x1.C83E7AD4E6EFEp-0632,  0xC75809C42C684DD2,  +688 },  // 1.0e-190
+    { 0x1.1D270CC51055Fp-0628,  0x9F79A169BD203E42,  +685 },  // 1.0e-189
+    { 0x1.6470CFF6546B7p-0625,  0xFF290242C83396CF,  +681 },  // 1.0e-188
+    { 0x1.BD8D03F3E9864p-0622,  0xCC20CE9BD35C78A6,  +678 },  // 1.0e-187
+    { 0x1.1678227871F3Fp-0618,  0xA34D721642B06085,  +675 },  // 1.0e-186
+    { 0x1.5C162B168E70Fp-0615,  0x82A45B450226B39D,  +672 },  // 1.0e-185
+    { 0x1.B31BB5DC320D2p-0612,  0xD106F86E69D785C8,  +668 },  // 1.0e-184
+    { 0x1.0FF151A99F483p-0608,  0xA738C6BEBB12D16D,  +665 },  // 1.0e-183
+    { 0x1.53EDA614071A4p-0605,  0x85C7056562757457,  +662 },  // 1.0e-182
+    { 0x1.A8E90F9908E0Dp-0602,  0xD60B3BD56A5586F2,  +658 },  // 1.0e-181
+    { 0x1.0991A9BFA58C8p-0598,  0xAB3C2FDDEEAAD25B,  +655 },  // 1.0e-180
+    { 0x1.4BF6142F8EEFAp-0595,  0x88FCF317F22241E3,  +652 },  // 1.0e-179
+    { 0x1.9EF3993B72AB9p-0592,  0xDB2E51BFE9D0696B,  +648 },  // 1.0e-178
+    { 0x1.03583FC527AB4p-0588,  0xAF58416654A6BABC,  +645 },  // 1.0e-177
+    { 0x1.442E4FB671961p-0585,  0x8C469AB843B89563,  +642 },  // 1.0e-176
+    { 0x1.9539E3A40DFB9p-0582,  0xE070F78D3927556B,  +638 },  // 1.0e-175
+    { 0x1.FA885C8D117A7p-0579,  0xB38D92D760EC4456,  +635 },  // 1.0e-174
+    { 0x1.3C9539D82AEC8p-0575,  0x8FA475791A569D11,  +632 },  // 1.0e-173
+    { 0x1.8BBA884E35A7Ap-0572,  0xE5D3EF282A242E82,  +628 },  // 1.0e-172
+    { 0x1.EEA92A61C3119p-0569,  0xB7DCBF5354E9BECF,  +625 },  // 1.0e-171
+    { 0x1.3529BA7D19EB0p-0565,  0x9316FF75DD87CBD9,  +622 },  // 1.0e-170
+    { 0x1.8274291C6065Bp-0562,  0xEB57FF22FC0C795A,  +618 },  // 1.0e-169
+    { 0x1.E3113363787F2p-0559,  0xBC4665B596706115,  +615 },  // 1.0e-168
+    { 0x1.2DEAC01E2B4F7p-0555,  0x969EB7C47859E744,  +612 },  // 1.0e-167
+    { 0x1.79657025B6235p-0552,  0xF0FDF2D3F3C30BA0,  +608 },  // 1.0e-166
+    { 0x1.D7BECC2F23AC2p-0549,  0xC0CB28A98FCF3C80,  +605 },  // 1.0e-165
+    { 0x1.26D73F9D764BAp-0545,  0x9A3C2087A63F639A,  +602 },  // 1.0e-164
+    { 0x1.708D0F84D3DE8p-0542,  0xF6C69A72A3989F5C,  +598 },  // 1.0e-163
+    { 0x1.CCB0536608D62p-0539,  0xC56BAEC21C7A1917,  +595 },  // 1.0e-162
+    { 0x1.1FEE341FC585Dp-0535,  0x9DEFBF01B061ADAC,  +592 },  // 1.0e-161
+    { 0x1.67E9C127B6E75p-0532,  0xFCB2CB35E702AF79,  +588 },  // 1.0e-160
+    { 0x1.C1E43171A4A12p-0529,  0xCA28A291859BBF94,  +585 },  // 1.0e-159
+    { 0x1.192E9EE706E4Bp-0525,  0xA1BA1BA79E1632DD,  +582 },  // 1.0e-158
+    { 0x1.5F7A46A0C89DEp-0522,  0x8161AFB94B44F57E,  +579 },  // 1.0e-157
+    { 0x1.B758D848FAC55p-0519,  0xCF02B2C21207EF2F,  +575 },  // 1.0e-156
+    { 0x1.1297872D9CBB5p-0515,  0xA59BC234DB398C26,  +572 },  // 1.0e-155
+    { 0x1.573D68F903EA3p-0512,  0x847C9B5D7C2E09B8,  +569 },  // 1.0e-154
+    { 0x1.AD0CC33744E4Bp-0509,  0xD3FA922F2D1675F3,  +565 },  // 1.0e-153
+    { 0x1.0C27FA028B0EFp-0505,  0xA99541BF57452B29,  +562 },  // 1.0e-152
+    { 0x1.4F31F8832DD2Bp-0502,  0x87AA9AFF79042287,  +559 },  // 1.0e-151
+    { 0x1.A2FE76A3F9475p-0499,  0xD910F7FF28069DA5,  +555 },  // 1.0e-150
+    { 0x1.05DF0A267BCCAp-0495,  0xADA72CCC20054AEA,  +552 },  // 1.0e-149
+    { 0x1.4756CCB01ABFCp-0492,  0x8AEC23D680043BEF,  +549 },  // 1.0e-148
+    { 0x1.992C7FDC216FBp-0489,  0xDE469FBD99A05FE4,  +545 },  // 1.0e-147
+    { 0x1.FF779FD329CB9p-0486,  0xB1D219647AE6B31D,  +542 },  // 1.0e-146
+    { 0x1.3FAAC3E3FA1F4p-0482,  0x8E41ADE9FBEBC27E,  +539 },  // 1.0e-145
+    { 0x1.8F9574DCF8A71p-0479,  0xE39C49765FDF9D95,  +535 },  // 1.0e-144
+    { 0x1.F37AD21436D0Dp-0476,  0xB616A12B7FE617AB,  +532 },  // 1.0e-143
+    { 0x1.382CC34CA2428p-0472,  0x91ABB422CCB812EF,  +529 },  // 1.0e-142
+    { 0x1.8637F41FCAD32p-0469,  0xE912B9D1478CEB18,  +525 },  // 1.0e-141
+    { 0x1.E7C5F127BD87Fp-0466,  0xBA756174393D88E0,  +522 },  // 1.0e-140
+    { 0x1.30DBB6B8D674Fp-0462,  0x952AB45CFA97A0B3,  +519 },  // 1.0e-139
+    { 0x1.7D12A4670C123p-0459,  0xEEAABA2E5DBF6785,  +515 },  // 1.0e-138
+    { 0x1.DC574D80CF16Cp-0456,  0xBEEEFB584AFF8604,  +512 },  // 1.0e-137
+    { 0x1.29B69070816E3p-0452,  0x98BF2F79D5993803,  +509 },  // 1.0e-136
+    { 0x1.7424348CA1C9Cp-0449,  0xF46518C2EF5B8CD2,  +505 },  // 1.0e-135
+    { 0x1.D12D41AFCA3C3p-0446,  0xC38413CF25E2D70E,  +502 },  // 1.0e-134
+    { 0x1.22BC490DDE65Ap-0442,  0x9C69A97284B578D8,  +499 },  // 1.0e-133
+    { 0x1.6B6B5B5155FF1p-0439,  0xFA42A8B73ABBF48D,  +495 },  // 1.0e-132
+    { 0x1.C6463225AB7EDp-0436,  0xC83553C5C8965D3E,  +492 },  // 1.0e-131
+    { 0x1.1BEBDF578B2F4p-0432,  0xA02AA96B06DEB0FE,  +489 },  // 1.0e-130
+    { 0x1.62E6D72D6DFB1p-0429,  0x802221226BE55A65,  +486 },  // 1.0e-129
+    { 0x1.BBA08CF8C979Dp-0426,  0xCD036837130890A2,  +482 },  // 1.0e-128
+    { 0x1.1544581B7DEC2p-0422,  0xA402B9C5A8D3A6E8,  +479 },  // 1.0e-127
+    { 0x1.5A956E225D673p-0419,  0x8335616AED761F20,  +476 },  // 1.0e-126
+    { 0x1.B13AC9AAF4C0Fp-0416,  0xD1EF0244AF236500,  +472 },  // 1.0e-125
+    { 0x1.0EC4BE0AD8F8Ap-0412,  0xA7F26836F282B733,  +469 },  // 1.0e-124
+    { 0x1.5275ED8D8F36Cp-0409,  0x865B86925B9BC5C3,  +466 },  // 1.0e-123
+    { 0x1.A71368F0F3047p-0406,  0xD6F8D7509292D604,  +462 },  // 1.0e-122
+    { 0x1.086C219697E2Dp-0402,  0xABFA45DA0EDBDE6A,  +459 },  // 1.0e-121
+    { 0x1.4A8729FC3DDB8p-0399,  0x899504AE72497EBB,  +456 },  // 1.0e-120
+    { 0x1.9D28F47B4D525p-0396,  0xDC21A1171D42645E,  +452 },  // 1.0e-119
+    { 0x1.023998CD10538p-0392,  0xB01AE745B101E9E5,  +449 },  // 1.0e-118
+    { 0x1.42C7FF0054685p-0389,  0x8CE2529E2734BB1E,  +446 },  // 1.0e-117
+    { 0x1.9379FEC069827p-0386,  0xE16A1DC9D8545E95,  +442 },  // 1.0e-116
+    { 0x1.F8587E7083E30p-0383,  0xB454E4A179DD1878,  +439 },  // 1.0e-115
+    { 0x1.3B374F06526DEp-0379,  0x9043EA1AC7E41393,  +436 },  // 1.0e-114
+    { 0x1.8A0522C7E7096p-0376,  0xE6D3102AD96CEC1E,  +432 },  // 1.0e-113
+    { 0x1.EC866B79E0CBBp-0373,  0xB8A8D9BBE123F018,  +429 },  // 1.0e-112
+    { 0x1.33D4032C2C7F5p-0369,  0x93BA47C980E98CE0,  +426 },  // 1.0e-111
+    { 0x1.80C903F7379F2p-0366,  0xEC5D3FA8CE427B00,  +422 },  // 1.0e-110
+    { 0x1.E0FB44F50586Fp-0363,  0xBD176620A501FC00,  +419 },  // 1.0e-109
+    { 0x1.2C9D0B1923745p-0359,  0x9745EB4D50CE6333,  +416 },  // 1.0e-108
+    { 0x1.77C44DDF6C516p-0356,  0xF209787BB47D6B85,  +412 },  // 1.0e-107
+    { 0x1.D5B561574765Cp-0353,  0xC1A12D2FC3978938,  +409 },  // 1.0e-106
+    { 0x1.25915CD68C9FAp-0349,  0x9AE7575969460760,  +406 },  // 1.0e-105
+    { 0x1.6EF5B40C2FC78p-0346,  0xF7D88BC24209A566,  +402 },  // 1.0e-104
+    { 0x1.CAB3210F3BB96p-0343,  0xC646D63501A1511E,  +399 },  // 1.0e-103
+    { 0x1.1EAFF4A98553Ep-0339,  0x9E9F11C4014DDA7F,  +396 },  // 1.0e-102
+    { 0x1.665BF1D3E6A8Dp-0336,  0xFDCB4FA002162A64,  +392 },  // 1.0e-101
+    { 0x1.BFF2EE48E0530p-0333,  0xCB090C8001AB551D,  +389 },  // 1.0e-100
+    { 0x1.17F7D4ED8C33Ep-0329,  0xA26DA3999AEF774A,  +386 },  // 1.0e-099
+    { 0x1.5DF5CA28EF40Ep-0326,  0x81F14FAE158C5F6F,  +383 },  // 1.0e-098
+    { 0x1.B5733CB32B111p-0323,  0xCFE87F7CEF46FF17,  +379 },  // 1.0e-097
+    { 0x1.116805EFFAEABp-0319,  0xA6539930BF6BFF46,  +376 },  // 1.0e-096
+    { 0x1.55C2076BF9A56p-0316,  0x850FADC09923329F,  +373 },  // 1.0e-095
+    { 0x1.AB328946F80EBp-0313,  0xD4E5E2CDC1D1EA97,  +369 },  // 1.0e-094
+    { 0x1.0AFF95CC5B093p-0309,  0xAA51823E34A7EEDF,  +366 },  // 1.0e-093
+    { 0x1.4DBF7B3F71CB8p-0306,  0x884134FE908658B3,  +363 },  // 1.0e-092
+    { 0x1.A12F5A0F4E3E5p-0303,  0xDA01EE641A708DEA,  +359 },  // 1.0e-091
+    { 0x1.04BD984990E70p-0299,  0xAE67F1E9AEC07188,  +356 },  // 1.0e-090
+    { 0x1.45ECFE5BF520Bp-0296,  0x8B865B215899F46D,  +353 },  // 1.0e-089
+    { 0x1.97683DF2F268Ep-0293,  0xDF3D5E9BC0F653E2,  +349 },  // 1.0e-088
+    { 0x1.FD424D6FAF031p-0290,  0xB2977EE300C50FE8,  +346 },  // 1.0e-087
+    { 0x1.3E497065CD61Fp-0286,  0x8EDF98B59A373FED,  +343 },  // 1.0e-086
+    { 0x1.8DDBCC7F40BA7p-0283,  0xE498F455C38B997B,  +339 },  // 1.0e-085
+    { 0x1.F152BF9F10E90p-0280,  0xB6E0C377CFA2E12F,  +336 },  // 1.0e-084
+    { 0x1.36D3B7C36A91Ap-0276,  0x924D692CA61BE759,  +333 },  // 1.0e-083
+    { 0x1.8488A5B445361p-0273,  0xEA1575143CF97227,  +329 },  // 1.0e-082
+    { 0x1.E5AACF2156839p-0270,  0xBB445DA9CA612820,  +326 },  // 1.0e-081
+    { 0x1.2F8AC174D6124p-0266,  0x95D04AEE3B80ECE6,  +323 },  // 1.0e-080
+    { 0x1.7B6D71D20B96Dp-0263,  0xEFB3AB16C59B14A3,  +319 },  // 1.0e-079
+    { 0x1.DA48CE468E7C8p-0260,  0xBFC2EF456AE276E9,  +316 },  // 1.0e-078
+    { 0x1.286D80EC190DDp-0256,  0x9968BF6ABBE85F21,  +313 },  // 1.0e-077
+    { 0x1.7288E1271F514p-0253,  0xF5746577930D6501,  +309 },  // 1.0e-076
+    { 0x1.CF2B1970E7259p-0250,  0xC45D1DF942711D9B,  +306 },  // 1.0e-075
+    { 0x1.217AEFE690778p-0246,  0x9D174B2DCEC0E47C,  +303 },  // 1.0e-074
+    { 0x1.69D9ABE034956p-0243,  0xFB5878494ACE3A60,  +299 },  // 1.0e-073
+    { 0x1.C45016D841BABp-0240,  0xC913936DD571C84D,  +296 },  // 1.0e-072
+    { 0x1.1AB20E472914Bp-0236,  0xA0DC75F1778E39D7,  +293 },  // 1.0e-071
+    { 0x1.615E91D8F359Ep-0233,  0x80B05E5AC60B6179,  +290 },  // 1.0e-070
+    { 0x1.B9B6364F30305p-0230,  0xCDE6FD5E09ABCF27,  +286 },  // 1.0e-069
+    { 0x1.1411E1F17E1E3p-0226,  0xA4B8CAB1A1563F53,  +283 },  // 1.0e-068
+    { 0x1.59165A6DDDA5Cp-0223,  0x83C7088E1AAB65DC,  +280 },  // 1.0e-067
+    { 0x1.AF5BF109550F3p-0220,  0xD2D80DB02AABD62C,  +276 },  // 1.0e-066
+    { 0x1.0D9976A5D5298p-0216,  0xA8ACD7C0222311BD,  +273 },  // 1.0e-065
+    { 0x1.50FFD44F4A73Ep-0213,  0x86F0AC99B4E8DAFE,  +270 },  // 1.0e-064
+    { 0x1.A53FC9631D10Dp-0210,  0xD7E77A8F87DAF7FC,  +266 },  // 1.0e-063
+    { 0x1.0747DDDDF22A8p-0206,  0xACB92ED9397BF997,  +263 },  // 1.0e-062
+    { 0x1.4919D5556EB52p-0203,  0x8A2DBF142DFCC7AC,  +260 },  // 1.0e-061
+    { 0x1.9B604AAACA627p-0200,  0xDD15FE86AFFAD913,  +256 },  // 1.0e-060
+    { 0x1.011C2EAABE7D8p-0196,  0xB0DE65388CC8ADA9,  +253 },  // 1.0e-059
+    { 0x1.41633A556E1CEp-0193,  0x8D7EB76070A08AED,  +250 },  // 1.0e-058
+    { 0x1.91BC08EAC9A42p-0190,  0xE264589A4DCDAB15,  +246 },  // 1.0e-057
+    { 0x1.F62B0B257C0D2p-0187,  0xB51D13AEA4A488DE,  +243 },  // 1.0e-056
+    { 0x1.39DAE6F76D884p-0183,  0x90E40FBEEA1D3A4B,  +240 },  // 1.0e-055
+    { 0x1.8851A0B548EA4p-0180,  0xE7D34C64A9C85D45,  +236 },  // 1.0e-054
+    { 0x1.EA6608E29B24Dp-0177,  0xB975D6B6EE39E437,  +233 },  // 1.0e-053
+    { 0x1.327FC58DA0F70p-0173,  0x945E455F24FB1CF9,  +230 },  // 1.0e-052
+    { 0x1.7F1FB6F10934Cp-0170,  0xED63A231D4C4FB28,  +226 },  // 1.0e-051
+    { 0x1.DEE7A4AD4B81Fp-0167,  0xBDE94E8E43D0C8ED,  +223 },  // 1.0e-050
+    { 0x1.2B50C6EC4F314p-0163,  0x97EDD871CFDA3A57,  +220 },  // 1.0e-049
+    { 0x1.7624F8A762FD9p-0160,  0xF316271C7FC3908B,  +216 },  // 1.0e-048
+    { 0x1.D3AE36D13BBCFp-0157,  0xC2781F49FFCFA6D6,  +213 },  // 1.0e-047
+    { 0x1.244CE242C5561p-0153,  0x9B934C3B330C8578,  +210 },  // 1.0e-046
+    { 0x1.6D601AD376ABAp-0150,  0xF8EBAD2B84E0D58C,  +206 },  // 1.0e-045
+    { 0x1.C8B8218854568p-0147,  0xC722F0EF9D80AAD7,  +203 },  // 1.0e-044
+    { 0x1.1D7314F534B61p-0143,  0x9F4F2726179A2246,  +200 },  // 1.0e-043
+    { 0x1.64CFDA3281E39p-0140,  0xFEE50B7025C36A09,  +196 },  // 1.0e-042
+    { 0x1.BE03D0BF225C7p-0137,  0xCBEA6F8CEB02BB3A,  +193 },  // 1.0e-041
+    { 0x1.16C262777579Dp-0133,  0xA321F2D7226895C8,  +190 },  // 1.0e-040
+    { 0x1.5C72FB1552D84p-0130,  0x82818F1281ED44A0,  +187 },  // 1.0e-039
+    { 0x1.B38FB9DAA78E5p-0127,  0xD0CF4B50CFE20766,  +183 },  // 1.0e-038
+    { 0x1.1039D428A8B8Fp-0123,  0xA70C3C40A64E6C52,  +180 },  // 1.0e-037
+    { 0x1.54484932D2E73p-0120,  0x85A36366EB71F042,  +177 },  // 1.0e-036
+    { 0x1.A95A5B7F87A0Fp-0117,  0xD5D238A4ABE98069,  +173 },  // 1.0e-035
+    { 0x1.09D8792FB4C4Ap-0113,  0xAB0E93B6EFEE0054,  +170 },  // 1.0e-034
+    { 0x1.4C4E977BA1F5Cp-0110,  0x88D8762BF324CD10,  +167 },  // 1.0e-033
+    { 0x1.9F623D5A8A733p-0107,  0xDAF3F04651D47B4D,  +163 },  // 1.0e-032
+    { 0x1.039D665896880p-0103,  0xAF298D050E4395D7,  +160 },  // 1.0e-031
+    { 0x1.4484BFEEBC2A0p-0100,  0x8C213D9DA502DE46,  +157 },  // 1.0e-030
+    { 0x1.95A5EFEA6B348p-0097,  0xE0352F62A19E306F,  +153 },  // 1.0e-029
+    { 0x1.FB0F6BE50601Ap-0094,  0xB35DBF821AE4F38C,  +150 },  // 1.0e-028
+    { 0x1.3CE9A36F23C10p-0090,  0x8F7E32CE7BEA5C70,  +147 },  // 1.0e-027
+    { 0x1.8C240C4AECB14p-0087,  0xE596B7B0C643C71A,  +143 },  // 1.0e-026
+    { 0x1.EF2D0F5DA7DD9p-0084,  0xB7ABC627050305AE,  +140 },  // 1.0e-025
+    { 0x1.357C299A88EA8p-0080,  0x92EFD1B8D0CF37BF,  +137 },  // 1.0e-024
+    { 0x1.82DB34012B252p-0077,  0xEB194F8E1AE525FE,  +133 },  // 1.0e-023
+    { 0x1.E392010175EE6p-0074,  0xBC143FA4E250EB32,  +130 },  // 1.0e-022
+    { 0x1.2E3B40A0E9B50p-0070,  0x96769950B50D88F5,  +127 },  // 1.0e-021
+    { 0x1.79CA10C924224p-0067,  0xF0BDC21ABB48DB21,  +123 },  // 1.0e-020
+    { 0x1.D83C94FB6D2ADp-0064,  0xC097CE7BC90715B4,  +120 },  // 1.0e-019
+    { 0x1.2725DD1D243ACp-0060,  0x9A130B963A6C115D,  +117 },  // 1.0e-018
+    { 0x1.70EF54646D497p-0057,  0xF684DF56C3E01BC7,  +113 },  // 1.0e-017
+    { 0x1.CD2B297D889BDp-0054,  0xC5371912364CE306,  +110 },  // 1.0e-016
+    { 0x1.203AF9EE75616p-0050,  0x9DC5ADA82B70B59E,  +107 },  // 1.0e-015
+    { 0x1.6849B86A12B9Cp-0047,  0xFC6F7C4045812297,  +103 },  // 1.0e-014
+    { 0x1.C25C268497682p-0044,  0xC9F2C9CD04674EDF,  +100 },  // 1.0e-013
+    { 0x1.19799812DEA12p-0040,  0xA18F07D736B90BE6,   +97 },  // 1.0e-012
+    { 0x1.5FD7FE1796496p-0037,  0x813F3978F8940985,   +94 },  // 1.0e-011
+    { 0x1.B7CDFD9D7BDBBp-0034,  0xCECB8F27F4200F3B,   +90 },  // 1.0e-010
+    { 0x1.12E0BE826D695p-0030,  0xA56FA5B99019A5C8,   +87 },  // 1.0e-009
+    { 0x1.5798EE2308C3Ap-0027,  0x84595161401484A0,   +84 },  // 1.0e-008
+    { 0x1.AD7F29ABCAF49p-0024,  0xD3C21BCECCEDA100,   +80 },  // 1.0e-007
+    { 0x1.0C6F7A0B5ED8Ep-0020,  0xA968163F0A57B400,   +77 },  // 1.0e-006
+    { 0x1.4F8B588E368F1p-0017,  0x878678326EAC9000,   +74 },  // 1.0e-005
+    { 0x1.A36E2EB1C432Dp-0014,  0xD8D726B7177A8000,   +70 },  // 1.0e-004
+    { 0x1.0624DD2F1A9FCp-0010,  0xAD78EBC5AC620000,   +67 },  // 1.0e-003
+    { 0x1.47AE147AE147Bp-0007,  0x8AC7230489E80000,   +64 },  // 1.0e-002
+    { 0x1.999999999999Ap-0004,  0xDE0B6B3A76400000,   +60 },  // 1.0e-001
+    { 0x1.0000000000000p+0000,  0xB1A2BC2EC5000000,   +57 },  // 1.0e+000
+    { 0x1.4000000000000p+0003,  0x8E1BC9BF04000000,   +54 },  // 1.0e+001
+    { 0x1.9000000000000p+0006,  0xE35FA931A0000000,   +50 },  // 1.0e+002
+    { 0x1.F400000000000p+0009,  0xB5E620F480000000,   +47 },  // 1.0e+003
+    { 0x1.3880000000000p+0013,  0x9184E72A00000000,   +44 },  // 1.0e+004
+    { 0x1.86A0000000000p+0016,  0xE8D4A51000000000,   +40 },  // 1.0e+005
+    { 0x1.E848000000000p+0019,  0xBA43B74000000000,   +37 },  // 1.0e+006
+    { 0x1.312D000000000p+0023,  0x9502F90000000000,   +34 },  // 1.0e+007
+    { 0x1.7D78400000000p+0026,  0xEE6B280000000000,   +30 },  // 1.0e+008
+    { 0x1.DCD6500000000p+0029,  0xBEBC200000000000,   +27 },  // 1.0e+009
+    { 0x1.2A05F20000000p+0033,  0x9896800000000000,   +24 },  // 1.0e+010
+    { 0x1.74876E8000000p+0036,  0xF424000000000000,   +20 },  // 1.0e+011
+    { 0x1.D1A94A2000000p+0039,  0xC350000000000000,   +17 },  // 1.0e+012
+    { 0x1.2309CE5400000p+0043,  0x9C40000000000000,   +14 },  // 1.0e+013
+    { 0x1.6BCC41E900000p+0046,  0xFA00000000000000,   +10 },  // 1.0e+014
+    { 0x1.C6BF526340000p+0049,  0xC800000000000000,    +7 },  // 1.0e+015
+    { 0x1.1C37937E08000p+0053,  0xA000000000000000,    +4 },  // 1.0e+016
+    { 0x1.6345785D8A000p+0056,  0x8000000000000000,    +1 },  // 1.0e+017
+    { 0x1.BC16D674EC800p+0059,  0xCCCCCCCCCCCCCCCD,    -3 },  // 1.0e+018
+    { 0x1.158E460913D00p+0063,  0xA3D70A3D70A3D70B,    -6 },  // 1.0e+019
+    { 0x1.5AF1D78B58C40p+0066,  0x83126E978D4FDF3C,    -9 },  // 1.0e+020
+    { 0x1.B1AE4D6E2EF50p+0069,  0xD1B71758E219652C,   -13 },  // 1.0e+021
+    { 0x1.0F0CF064DD592p+0073,  0xA7C5AC471B478424,   -16 },  // 1.0e+022
+    { 0x1.52D02C7E14AF7p+0076,  0x8637BD05AF6C69B6,   -19 },  // 1.0e+023
+    { 0x1.A784379D99DB5p+0079,  0xD6BF94D5E57A42BD,   -23 },  // 1.0e+024
+    { 0x1.08B2A2C280291p+0083,  0xABCC77118461CEFD,   -26 },  // 1.0e+025
+    { 0x1.4ADF4B7320335p+0086,  0x89705F4136B4A598,   -29 },  // 1.0e+026
+    { 0x1.9D971E4FE8402p+0089,  0xDBE6FECEBDEDD5BF,   -33 },  // 1.0e+027
+    { 0x1.027E72F1F1282p+0093,  0xAFEBFF0BCB24AAFF,   -36 },  // 1.0e+028
+    { 0x1.431E0FAE6D722p+0096,  0x8CBCCC096F5088CC,   -39 },  // 1.0e+029
+    { 0x1.93E5939A08CEAp+0099,  0xE12E13424BB40E14,   -43 },  // 1.0e+030
+    { 0x1.F8DEF8808B025p+0102,  0xB424DC35095CD810,   -46 },  // 1.0e+031
+    { 0x1.3B8B5B5056E17p+0106,  0x901D7CF73AB0ACDA,   -49 },  // 1.0e+032
+    { 0x1.8A6E32246C99Dp+0109,  0xE69594BEC44DE15C,   -53 },  // 1.0e+033
+    { 0x1.ED09BEAD87C04p+0112,  0xB877AA3236A4B44A,   -56 },  // 1.0e+034
+    { 0x1.3426172C74D83p+0116,  0x9392EE8E921D5D08,   -59 },  // 1.0e+035
+    { 0x1.812F9CF7920E3p+0119,  0xEC1E4A7DB69561A6,   -63 },  // 1.0e+036
+    { 0x1.E17B84357691Cp+0122,  0xBCE5086492111AEB,   -66 },  // 1.0e+037
+    { 0x1.2CED32A16A1B2p+0126,  0x971DA05074DA7BEF,   -69 },  // 1.0e+038
+    { 0x1.78287F49C4A1Ep+0129,  0xF1C90080BAF72CB2,   -73 },  // 1.0e+039
+    { 0x1.D6329F1C35CA5p+0132,  0xC16D9A0095928A28,   -76 },  // 1.0e+040
+    { 0x1.25DFA371A19E7p+0136,  0x9ABE14CD44753B53,   -79 },  // 1.0e+041
+    { 0x1.6F578C4E0A061p+0139,  0xF79687AED3EEC552,   -83 },  // 1.0e+042
+    { 0x1.CB2D6F618C879p+0142,  0xC612062576589DDB,   -86 },  // 1.0e+043
+    { 0x1.1EFC659CF7D4Cp+0146,  0x9E74D1B791E07E49,   -89 },  // 1.0e+044
+    { 0x1.66BB7F0435C9Fp+0149,  0xFD87B5F28300CA0E,   -93 },  // 1.0e+045
+    { 0x1.C06A5EC5433C7p+0152,  0xCAD2F7F5359A3B3F,   -96 },  // 1.0e+046
+    { 0x1.18427B3B4A05Cp+0156,  0xA2425FF75E14FC32,   -99 },  // 1.0e+047
+    { 0x1.5E531A0A1C873p+0159,  0x81CEB32C4B43FCF5,  -102 },  // 1.0e+048
+    { 0x1.B5E7E08CA3A90p+0162,  0xCFB11EAD453994BB,  -106 },  // 1.0e+049
+    { 0x1.11B0EC57E649Ap+0166,  0xA6274BBDD0FADD62,  -109 },  // 1.0e+050
+    { 0x1.561D276DDFDC1p+0169,  0x84EC3C97DA624AB5,  -112 },  // 1.0e+051
+    { 0x1.ABA4714957D31p+0172,  0xD4AD2DBFC3D07788,  -116 },  // 1.0e+052
+    { 0x1.0B46C6CDD6E3Fp+0176,  0xAA242499697392D3,  -119 },  // 1.0e+053
+    { 0x1.4E1878814C9CEp+0179,  0x881CEA14545C7576,  -122 },  // 1.0e+054
+    { 0x1.A19E96A19FC41p+0182,  0xD9C7DCED53C72256,  -126 },  // 1.0e+055
+    { 0x1.05031E2503DA9p+0186,  0xAE397D8AA96C1B78,  -129 },  // 1.0e+056
+    { 0x1.4643E5AE44D13p+0189,  0x8B61313BBABCE2C7,  -132 },  // 1.0e+057
+    { 0x1.97D4DF19D6058p+0192,  0xDF01E85F912E37A4,  -136 },  // 1.0e+058
+    { 0x1.FDCA16E04B86Ep+0195,  0xB267ED1940F1C61D,  -139 },  // 1.0e+059
+    { 0x1.3E9E4E4C2F345p+0199,  0x8EB98A7A9A5B04E4,  -142 },  // 1.0e+060
+    { 0x1.8E45E1DF3B016p+0202,  0xE45C10C42A2B3B06,  -146 },  // 1.0e+061
+    { 0x1.F1D75A5709C1Bp+0205,  0xB6B00D69BB55C8D2,  -149 },  // 1.0e+062
+    { 0x1.3726987666191p+0209,  0x9226712162AB070E,  -152 },  // 1.0e+063
+    { 0x1.84F03E93FF9F5p+0212,  0xE9D71B689DDE71B0,  -156 },  // 1.0e+064
+    { 0x1.E62C4E38FF873p+0215,  0xBB127C53B17EC15A,  -159 },  // 1.0e+065
+    { 0x1.2FDBB0E39FB48p+0219,  0x95A8637627989AAE,  -162 },  // 1.0e+066
+    { 0x1.7BD29D1C87A1Ap+0222,  0xEF73D256A5C0F77D,  -166 },  // 1.0e+067
+    { 0x1.DAC74463A98A0p+0225,  0xBF8FDB78849A5F97,  -169 },  // 1.0e+068
+    { 0x1.28BC8ABE49F64p+0229,  0x993FE2C6D07B7FAC,  -172 },  // 1.0e+069
+    { 0x1.72EBAD6DDC73Dp+0232,  0xF53304714D9265E0,  -176 },  // 1.0e+070
+    { 0x1.CFA698C95390Cp+0235,  0xC428D05AA4751E4D,  -179 },  // 1.0e+071
+    { 0x1.21C81F7DD43A8p+0239,  0x9CED737BB6C4183E,  -182 },  // 1.0e+072
+    { 0x1.6A3A275D49492p+0242,  0xFB158592BE068D2F,  -186 },  // 1.0e+073
+    { 0x1.C4C8B1349B9B6p+0245,  0xC8DE047564D20A8C,  -189 },  // 1.0e+074
+    { 0x1.1AFD6EC0E1412p+0249,  0xA0B19D2AB70E6ED7,  -192 },  // 1.0e+075
+    { 0x1.61BCCA7119916p+0252,  0x808E17555F3EBF12,  -195 },  // 1.0e+076
+    { 0x1.BA2BFD0D5FF5Cp+0255,  0xCDB02555653131B7,  -199 },  // 1.0e+077
+    { 0x1.145B7E285BF99p+0259,  0xA48CEAAAB75A8E2C,  -202 },  // 1.0e+078
+    { 0x1.59725DB272F80p+0262,  0x83A3EEEEF9153E8A,  -205 },  // 1.0e+079
+    { 0x1.AFCEF51F0FB5Fp+0265,  0xD29FE4B18E88640F,  -209 },  // 1.0e+080
+    { 0x1.0DE1593369D1Cp+0269,  0xA87FEA27A539E9A6,  -212 },  // 1.0e+081
+    { 0x1.5159AF8044463p+0272,  0x86CCBB52EA94BAEB,  -215 },  // 1.0e+082
+    { 0x1.A5B01B605557Bp+0275,  0xD7ADF884AA879178,  -219 },  // 1.0e+083
+    { 0x1.078E111C3556Dp+0279,  0xAC8B2D36EED2DAC6,  -222 },  // 1.0e+084
+    { 0x1.4971956342AC8p+0282,  0x8A08F0F8BF0F156C,  -225 },  // 1.0e+085
+    { 0x1.9BCDFABC1357Ap+0285,  0xDCDB1B2798182245,  -229 },  // 1.0e+086
+    { 0x1.0160BCB58C16Dp+0289,  0xB0AF48EC79ACE838,  -232 },  // 1.0e+087
+    { 0x1.41B8EBE2EF1C8p+0292,  0x8D590723948A5360,  -235 },  // 1.0e+088
+    { 0x1.922726DBAAE3Ap+0295,  0xE2280B6C20DD5233,  -239 },  // 1.0e+089
+    { 0x1.F6B0F092959C8p+0298,  0xB4ECD5F01A4AA829,  -242 },  // 1.0e+090
+    { 0x1.3A2E965B9D81Dp+0302,  0x90BD77F3483BB9BA,  -245 },  // 1.0e+091
+    { 0x1.88BA3BF284E24p+0305,  0xE7958CB87392C2C3,  -249 },  // 1.0e+092
+    { 0x1.EAE8CAEF261ADp+0308,  0xB94470938FA89BCF,  -252 },  // 1.0e+093
+    { 0x1.32D17ED577D0Cp+0312,  0x9436C0760C86E30C,  -255 },  // 1.0e+094
+    { 0x1.7F85DE8AD5C4Fp+0315,  0xED246723473E3814,  -259 },  // 1.0e+095
+    { 0x1.DF67562D8B363p+0318,  0xBDB6B8E905CB6010,  -262 },  // 1.0e+096
+    { 0x1.2BA095DC7701Ep+0322,  0x97C560BA6B0919A6,  -265 },  // 1.0e+097
+    { 0x1.7688BB5394C26p+0325,  0xF2D56790AB41C2A3,  -269 },  // 1.0e+098
+    { 0x1.D42AEA2879F2Fp+0328,  0xC24452DA229B021C,  -272 },  // 1.0e+099
+    { 0x1.249AD2594C37Dp+0332,  0x9B69DBE1B548CE7D,  -275 },  // 1.0e+100
+    { 0x1.6DC186EF9F45Dp+0335,  0xF8A95FCF88747D95,  -279 },  // 1.0e+101
+    { 0x1.C931E8AB87174p+0338,  0xC6EDE63FA05D3144,  -282 },  // 1.0e+102
+    { 0x1.1DBF316B346E8p+0342,  0x9F24B832E6B0F437,  -285 },  // 1.0e+103
+    { 0x1.652EFDC6018A2p+0345,  0xFEA126B7D78186BD,  -289 },  // 1.0e+104
+    { 0x1.BE7ABD3781ECBp+0348,  0xCBB41EF979346BCB,  -292 },  // 1.0e+105
+    { 0x1.170CB642B133Fp+0352,  0xA2F67F2DFA90563C,  -295 },  // 1.0e+106
+    { 0x1.5CCFE3D35D80Fp+0355,  0x825ECC24C8737830,  -298 },  // 1.0e+107
+    { 0x1.B403DCC834E12p+0358,  0xD097AD07A71F26B3,  -302 },  // 1.0e+108
+    { 0x1.108269FD210CCp+0362,  0xA6DFBD9FB8E5B88F,  -305 },  // 1.0e+109
+    { 0x1.54A3047C694FEp+0365,  0x857FCAE62D8493A6,  -308 },  // 1.0e+110
+    { 0x1.A9CBC59B83A3Ep+0368,  0xD59944A37C0752A3,  -312 },  // 1.0e+111
+    { 0x1.0A1F5B8132467p+0372,  0xAAE103B5FCD2A882,  -315 },  // 1.0e+112
+    { 0x1.4CA732617ED80p+0375,  0x88B402F7FD75539C,  -318 },  // 1.0e+113
+    { 0x1.9FD0FEF9DE8E0p+0378,  0xDAB99E59958885C5,  -322 },  // 1.0e+114
+    { 0x1.03E29F5C2B18Cp+0382,  0xAEFAE51477A06B04,  -325 },  // 1.0e+115
+    { 0x1.44DB473335DEFp+0385,  0x8BFBEA76C619EF37,  -328 },  // 1.0e+116
+    { 0x1.961219000356Bp+0388,  0xDFF9772470297EBE,  -332 },  // 1.0e+117
+    { 0x1.FB969F40042C6p+0391,  0xB32DF8E9F3546565,  -335 },  // 1.0e+118
+    { 0x1.3D3E2388029BCp+0395,  0x8F57FA54C2A9EAB7,  -338 },  // 1.0e+119
+    { 0x1.8C8DAC6A0342Bp+0398,  0xE55990879DDCAABE,  -342 },  // 1.0e+120
+    { 0x1.EFB1178484135p+0401,  0xB77ADA0617E3BBCC,  -345 },  // 1.0e+121
+    { 0x1.35CEAEB2D28C1p+0405,  0x92C8AE6B464FC970,  -348 },  // 1.0e+122
+    { 0x1.83425A5F872F2p+0408,  0xEADAB0ABA3B2DBE6,  -352 },  // 1.0e+123
+    { 0x1.E412F0F768FAEp+0411,  0xBBE226EFB628AFEB,  -355 },  // 1.0e+124
+    { 0x1.2E8BD69AA19CDp+0415,  0x964E858C91BA2656,  -358 },  // 1.0e+125
+    { 0x1.7A2ECC414A040p+0418,  0xF07DA27A82C37089,  -362 },  // 1.0e+126
+    { 0x1.D8BA7F519C850p+0421,  0xC06481FB9BCF8D3A,  -365 },  // 1.0e+127
+    { 0x1.27748F9301D32p+0425,  0x99EA0196163FA42F,  -368 },  // 1.0e+128
+    { 0x1.7151B377C247Fp+0428,  0xF64335BCF065D37E,  -372 },  // 1.0e+129
+    { 0x1.CDA62055B2D9Ep+0431,  0xC5029163F384A932,  -375 },  // 1.0e+130
+    { 0x1.2087D4358FC83p+0435,  0x9D9BA7832936EDC1,  -378 },  // 1.0e+131
+    { 0x1.68A9C942F3BA4p+0438,  0xFC2C3F3841F17C68,  -382 },  // 1.0e+132
+    { 0x1.C2D43B93B0A8Cp+0441,  0xC9BCFF6034C13053,  -385 },  // 1.0e+133
+    { 0x1.19C4A53C4E698p+0445,  0xA163FF802A3426A9,  -388 },  // 1.0e+134
+    { 0x1.6035CE8B6203Ep+0448,  0x811CCC668829B888,  -391 },  // 1.0e+135
+    { 0x1.B843422E3A84Dp+0451,  0xCE947A3DA6A9273F,  -395 },  // 1.0e+136
+    { 0x1.132A095CE4930p+0455,  0xA54394FE1EEDB8FF,  -398 },  // 1.0e+137
+    { 0x1.57F48BB41DB7Cp+0458,  0x843610CB4BF160CC,  -401 },  // 1.0e+138
+    { 0x1.ADF1AEA12525Bp+0461,  0xD389B4787982347A,  -405 },  // 1.0e+139
+    { 0x1.0CB70D24B7379p+0465,  0xA93AF6C6C79B5D2E,  -408 },  // 1.0e+140
+    { 0x1.4FE4D06DE5057p+0468,  0x87625F056C7C4A8C,  -411 },  // 1.0e+141
+    { 0x1.A3DE04895E46Dp+0471,  0xD89D64D57A607745,  -415 },  // 1.0e+142
+    { 0x1.066AC2D5DAEC4p+0475,  0xAD4AB7112EB3929E,  -418 },  // 1.0e+143
+    { 0x1.4805738B51A75p+0478,  0x8AA22C0DBEF60EE5,  -421 },  // 1.0e+144
+    { 0x1.9A06D06E26113p+0481,  0xDDD0467C64BCE4A1,  -425 },  // 1.0e+145
+    { 0x1.00444244D7CACp+0485,  0xB1736B96B6FD83B4,  -428 },  // 1.0e+146
+    { 0x1.405552D60DBD7p+0488,  0x8DF5EFABC5979C90,  -431 },  // 1.0e+147
+    { 0x1.906AA78B912CCp+0491,  0xE3231912D5BF60E7,  -435 },  // 1.0e+148
+    { 0x1.F485516E7577Fp+0494,  0xB5B5ADA8AAFF80B9,  -438 },  // 1.0e+149
+    { 0x1.38D352E5096B0p+0498,  0x915E2486EF32CD61,  -441 },  // 1.0e+150
+    { 0x1.8708279E4BC5Bp+0501,  0xE896A0D7E51E1567,  -445 },  // 1.0e+151
+    { 0x1.E8CA3185DEB72p+0504,  0xBA121A4650E4DDEC,  -448 },  // 1.0e+152
+    { 0x1.317E5EF3AB328p+0508,  0x94DB483840B717F0,  -451 },  // 1.0e+153
+    { 0x1.7DDDF6B095FF1p+0511,  0xEE2BA6C0678B5980,  -455 },  // 1.0e+154
+    { 0x1.DD55745CBB7EDp+0514,  0xBE89523386091466,  -458 },  // 1.0e+155
+    { 0x1.2A5568B9F52F5p+0518,  0x986DDB5C6B3A76B8,  -461 },  // 1.0e+156
+    { 0x1.74EAC2E8727B2p+0521,  0xF3E2F893DEC3F127,  -465 },  // 1.0e+157
+    { 0x1.D22573A28F19Ep+0524,  0xC31BFA0FE5698DB9,  -468 },  // 1.0e+158
+    { 0x1.2357684599703p+0528,  0x9C1661A651213E2E,  -471 },  // 1.0e+159
+    { 0x1.6C2D4256FFCC3p+0531,  0xF9BD690A1B68637C,  -475 },  // 1.0e+160
+    { 0x1.C73892ECBFBF4p+0534,  0xC7CABA6E7C5382C9,  -478 },  // 1.0e+161
+    { 0x1.1C835BD3F7D79p+0538,  0x9FD561F1FD0F9BD4,  -481 },  // 1.0e+162
+    { 0x1.63A432C8F5CD7p+0541,  0xFFBBCFE994E5C620,  -485 },  // 1.0e+163
+    { 0x1.BC8D3F7B3340Cp+0544,  0xCC963FEE10B7D1B4,  -488 },  // 1.0e+164
+    { 0x1.15D847AD00088p+0548,  0xA3AB66580D5FDAF6,  -491 },  // 1.0e+165
+    { 0x1.5B4E5998400AAp+0551,  0x82EF85133DE648C5,  -494 },  // 1.0e+166
+    { 0x1.B221EFFE500D4p+0554,  0xD17F3B51FCA3A7A1,  -498 },  // 1.0e+167
+    { 0x1.0F5535FEF2085p+0558,  0xA798FC4196E952E8,  -501 },  // 1.0e+168
+    { 0x1.532A837EAE8A6p+0561,  0x8613FD0145877586,  -504 },  // 1.0e+169
+    { 0x1.A7F5245E5A2CFp+0564,  0xD686619BA27255A3,  -508 },  // 1.0e+170
+    { 0x1.08F936BAF85C2p+0568,  0xAB9EB47C81F51150,  -511 },  // 1.0e+171
+    { 0x1.4B378469B6732p+0571,  0x894BC396CE5DA773,  -514 },  // 1.0e+172
+    { 0x1.9E056584240FEp+0574,  0xDBAC6C247D62A584,  -518 },  // 1.0e+173
+    { 0x1.02C35F729689Fp+0578,  0xAFBD2350644EEAD0,  -521 },  // 1.0e+174
+    { 0x1.4374374F3C2C7p+0581,  0x8C974F7383725574,  -524 },  // 1.0e+175
+    { 0x1.945145230B378p+0584,  0xE0F218B8D25088B9,  -528 },  // 1.0e+176
+    { 0x1.F965966BCE056p+0587,  0xB3F4E093DB73A094,  -531 },  // 1.0e+177
+    { 0x1.3BDF7E0360C36p+0591,  0x8FF71A0FE2C2E6DD,  -534 },  // 1.0e+178
+    { 0x1.8AD75D8438F44p+0594,  0xE65829B3046B0AFB,  -538 },  // 1.0e+179
+    { 0x1.ED8D34E547314p+0597,  0xB84687C269EF3BFC,  -541 },  // 1.0e+180
+    { 0x1.3478410F4C7EDp+0601,  0x936B9FCEBB25C996,  -544 },  // 1.0e+181
+    { 0x1.819651531F9E8p+0604,  0xEBDF661791D60F57,  -548 },  // 1.0e+182
+    { 0x1.E1FBE5A7E7862p+0607,  0xBCB2B812DB11A5DF,  -551 },  // 1.0e+183
+    { 0x1.2D3D6F88F0B3Dp+0611,  0x96F5600F15A7B7E6,  -554 },  // 1.0e+184
+    { 0x1.788CCB6B2CE0Dp+0614,  0xF18899B1BC3F8CA2,  -558 },  // 1.0e+185
+    { 0x1.D6AFFE45F8190p+0617,  0xC13A148E3032D6E8,  -561 },  // 1.0e+186
+    { 0x1.262DFEEBBB0FAp+0621,  0x9A94DD3E8CF578BA,  -564 },  // 1.0e+187
+    { 0x1.6FB97EA6A9D38p+0624,  0xF7549530E188C129,  -568 },  // 1.0e+188
+    { 0x1.CBA7DE5054486p+0627,  0xC5DD44271AD3CDBB,  -571 },  // 1.0e+189
+    { 0x1.1F48EAF234AD4p+0631,  0x9E4A9CEC15763E2F,  -574 },  // 1.0e+190
+    { 0x1.671B25AEC1D89p+0634,  0xFD442E4688BD304B,  -578 },  // 1.0e+191
+    { 0x1.C0E1EF1A724EBp+0637,  0xCA9CF1D206FDC03C,  -581 },  // 1.0e+192
+    { 0x1.188D357087713p+0641,  0xA21727DB38CB0030,  -584 },  // 1.0e+193
+    { 0x1.5EB082CCA94D8p+0644,  0x81AC1FE293D599C0,  -587 },  // 1.0e+194
+    { 0x1.B65CA37FD3A0Ep+0647,  0xCF79CC9DB955C2CD,  -591 },  // 1.0e+195
+    { 0x1.11F9E62FE4449p+0651,  0xA5FB0A17C777CF0A,  -594 },  // 1.0e+196
+    { 0x1.56785FBBDD55Bp+0654,  0x84C8D4DFD2C63F3C,  -597 },  // 1.0e+197
+    { 0x1.AC1677AAD4AB1p+0657,  0xD47487CC8470652C,  -601 },  // 1.0e+198
+    { 0x1.0B8E0ACAC4EAFp+0661,  0xA9F6D30A038D1DBD,  -604 },  // 1.0e+199
+    { 0x1.4E718D7D7625Bp+0664,  0x87F8A8D4CFA417CA,  -607 },  // 1.0e+200
+    { 0x1.A20DF0DCD3AF1p+0667,  0xD98DDAEE19068C77,  -611 },  // 1.0e+201
+    { 0x1.0548B68A044D7p+0671,  0xAE0B158B4738705F,  -614 },  // 1.0e+202
+    { 0x1.469AE42C8560Dp+0674,  0x8B3C113C38F9F37F,  -617 },  // 1.0e+203
+    { 0x1.98419D37A6B90p+0677,  0xDEC681F9F4C31F32,  -621 },  // 1.0e+204
+    { 0x1.FE52048590673p+0680,  0xB23867FB2A35B28E,  -624 },  // 1.0e+205
+    { 0x1.3EF342D37A408p+0684,  0x8E938662882AF53F,  -627 },  // 1.0e+206
+    { 0x1.8EB0138858D0Ap+0687,  0xE41F3D6A7377EECB,  -631 },  // 1.0e+207
+    { 0x1.F25C186A6F04Dp+0690,  0xB67F6455292CBF09,  -634 },  // 1.0e+208
+    { 0x1.37798F4285630p+0694,  0x91FF83775423CC07,  -637 },  // 1.0e+209
+    { 0x1.8557F31326BBCp+0697,  0xE998D258869FACD8,  -641 },  // 1.0e+210
+    { 0x1.E6ADEFD7F06ABp+0700,  0xBAE0A846D2195713,  -644 },  // 1.0e+211
+    { 0x1.302CB5E6F642Bp+0704,  0x9580869F0E7AAC0F,  -647 },  // 1.0e+212
+    { 0x1.7C37E360B3D36p+0707,  0xEF340A98172AACE5,  -651 },  // 1.0e+213
+    { 0x1.DB45DC38E0C83p+0710,  0xBF5CD54678EEF0B7,  -654 },  // 1.0e+214
+    { 0x1.290BA9A38C7D2p+0714,  0x991711052D8BF3C6,  -657 },  // 1.0e+215
+    { 0x1.734E940C6F9C6p+0717,  0xF4F1B4D515ACB93C,  -661 },  // 1.0e+216
+    { 0x1.D022390F8B838p+0720,  0xC3F490AA77BD60FD,  -664 },  // 1.0e+217
+    { 0x1.221563A9B7323p+0724,  0x9CC3A6EEC6311A64,  -667 },  // 1.0e+218
+    { 0x1.6A9ABC9424FECp+0727,  0xFAD2A4B13D1B5D6D,  -671 },  // 1.0e+219
+    { 0x1.C5416BB92E3E7p+0730,  0xC8A883C0FDAF7DF1,  -674 },  // 1.0e+220
+    { 0x1.1B48E353BCE70p+0734,  0xA086CFCD97BF97F4,  -677 },  // 1.0e+221
+    { 0x1.621B1C28AC20Cp+0737,  0x806BD9714632DFF7,  -680 },  // 1.0e+222
+    { 0x1.BAA1E332D728Fp+0740,  0xCD795BE870516657,  -684 },  // 1.0e+223
+    { 0x1.14A52DFFC679Ap+0744,  0xA46116538D0DEB79,  -687 },  // 1.0e+224
+    { 0x1.59CE797FB8180p+0747,  0x8380DEA93DA4BC61,  -690 },  // 1.0e+225
+    { 0x1.B04217DFA61E0p+0750,  0xD267CAA862A12D67,  -694 },  // 1.0e+226
+    { 0x1.0E294EEBC7D2Cp+0754,  0xA8530886B54DBDEC,  -697 },  // 1.0e+227
+    { 0x1.51B3A2A6B9C77p+0757,  0x86A8D39EF77164BD,  -700 },  // 1.0e+228
+    { 0x1.A6208B5068395p+0760,  0xD77485CB25823AC8,  -704 },  // 1.0e+229
+    { 0x1.07D457124123Dp+0764,  0xAC5D37D5B79B623A,  -707 },  // 1.0e+230
+    { 0x1.49C96CD6D16CCp+0767,  0x89E42CAAF9491B61,  -710 },  // 1.0e+231
+    { 0x1.9C3BC80C85C7Fp+0770,  0xDCA04777F541C568,  -714 },  // 1.0e+232
+    { 0x1.01A55D07D39D0p+0774,  0xB080392CC4349DED,  -717 },  // 1.0e+233
+    { 0x1.420EB449C8843p+0777,  0x8D3360F09CF6E4BE,  -720 },  // 1.0e+234
+    { 0x1.9292615C3AA54p+0780,  0xE1EBCE4DC7F16DFC,  -724 },  // 1.0e+235
+    { 0x1.F736F9B3494E9p+0783,  0xB4BCA50B065ABE64,  -727 },  // 1.0e+236
+    { 0x1.3A825C100DD12p+0787,  0x9096EA6F38489850,  -730 },  // 1.0e+237
+    { 0x1.8922F31411456p+0790,  0xE757DD7EC07426E6,  -734 },  // 1.0e+238
+    { 0x1.EB6BAFD91596Cp+0793,  0xB913179899F68585,  -737 },  // 1.0e+239
+    { 0x1.33234DE7AD7E3p+0797,  0x940F4613AE5ED137,  -740 },  // 1.0e+240
+    { 0x1.7FEC216198DDCp+0800,  0xECE53CEC4A314EBE,  -744 },  // 1.0e+241
+    { 0x1.DFE729B9FF153p+0803,  0xBD8430BD08277232,  -747 },  // 1.0e+242
+    { 0x1.2BF07A143F6D4p+0807,  0x979CF3CA6CEC5B5B,  -750 },  // 1.0e+243
+    { 0x1.76EC98994F489p+0810,  0xF294B943E17A2BC5,  -754 },  // 1.0e+244
+    { 0x1.D4A7BEBFA31ABp+0813,  0xC21094364DFB5637,  -757 },  // 1.0e+245
+    { 0x1.24E8D737C5F0Bp+0817,  0x9B407691D7FC44F9,  -760 },  // 1.0e+246
+    { 0x1.6E230D05B76CEp+0820,  0xF867241C8CC6D4C1,  -764 },  // 1.0e+247
+    { 0x1.C9ABD04725481p+0823,  0xC6B8E9B0709F109B,  -767 },  // 1.0e+248
+    { 0x1.1E0B622C774D1p+0827,  0x9EFA548D26E5A6E2,  -770 },  // 1.0e+249
+    { 0x1.658E3AB795205p+0830,  0xFE5D54150B090B03,  -774 },  // 1.0e+250
+    { 0x1.BEF1C9657A686p+0833,  0xCB7DDCDDA26DA269,  -777 },  // 1.0e+251
+    { 0x1.17571DDF6C814p+0837,  0xA2CB1717B52481EE,  -780 },  // 1.0e+252
+    { 0x1.5D2CE55747A19p+0840,  0x823C12795DB6CE58,  -783 },  // 1.0e+253
+    { 0x1.B4781EAD1989Fp+0843,  0xD0601D8EFC57B08C,  -787 },  // 1.0e+254
+    { 0x1.10CB132C2FF64p+0847,  0xA6B34AD8C9DFC070,  -790 },  // 1.0e+255
+    { 0x1.54FDD7F73BF3Cp+0850,  0x855C3BE0A17FCD27,  -793 },  // 1.0e+256
+    { 0x1.AA3D4DF50AF0Bp+0853,  0xD5605FCDCF32E1D7,  -797 },  // 1.0e+257
+    { 0x1.0A6650B926D67p+0857,  0xAAB37FD7D8F58179,  -800 },  // 1.0e+258
+    { 0x1.4CFFE4E7708C1p+0860,  0x888F99797A5E012E,  -803 },  // 1.0e+259
+    { 0x1.A03FDE214CAF1p+0863,  0xDA7F5BF590966849,  -807 },  // 1.0e+260
+    { 0x1.0427EAD4CFED7p+0867,  0xAECC49914078536E,  -810 },  // 1.0e+261
+    { 0x1.4531E58A03E8Cp+0870,  0x8BD6A141006042BE,  -813 },  // 1.0e+262
+    { 0x1.967E5EEC84E2Fp+0873,  0xDFBDCECE67006ACA,  -817 },  // 1.0e+263
+    { 0x1.FC1DF6A7A61BBp+0876,  0xB2FE3F0B8599EF08,  -820 },  // 1.0e+264
+    { 0x1.3D92BA28C7D15p+0880,  0x8F31CC0937AE58D3,  -823 },  // 1.0e+265
+    { 0x1.8CF768B2F9C5Ap+0883,  0xE51C79A85916F485,  -827 },  // 1.0e+266
+    { 0x1.F03542DFB8371p+0886,  0xB749FAED14125D37,  -830 },  // 1.0e+267
+    { 0x1.362149CBD3227p+0890,  0x92A1958A76751760,  -833 },  // 1.0e+268
+    { 0x1.83A99C3EC7EB0p+0893,  0xEA9C227723EE8BCC,  -837 },  // 1.0e+269
+    { 0x1.E494034E79E5Cp+0896,  0xBBB01B9283253CA3,  -840 },  // 1.0e+270
+    { 0x1.2EDC82110C2FAp+0900,  0x96267C7535B763B6,  -843 },  // 1.0e+271
+    { 0x1.7A93A2954F3B8p+0903,  0xF03D93EEBC589F89,  -847 },  // 1.0e+272
+    { 0x1.D9388B3AA30A6p+0906,  0xC0314325637A193A,  -850 },  // 1.0e+273
+    { 0x1.27C35704A5E68p+0910,  0x99C102844F94E0FC,  -853 },  // 1.0e+274
+    { 0x1.71B42CC5CF602p+0913,  0xF6019DA07F549B2C,  -857 },  // 1.0e+275
+    { 0x1.CE2137F743382p+0916,  0xC4CE17B399107C23,  -860 },  // 1.0e+276
+    { 0x1.20D4C2FA8A031p+0920,  0x9D71AC8FADA6C9B6,  -863 },  // 1.0e+277
+    { 0x1.6909F3B92C83Ep+0923,  0xFBE9141915D7A923,  -867 },  // 1.0e+278
+    { 0x1.C34C70A777A4Dp+0926,  0xC987434744AC874F,  -870 },  // 1.0e+279
+    { 0x1.1A0FC668AAC70p+0930,  0xA139029F6A239F73,  -873 },  // 1.0e+280
+    { 0x1.6093B802D578Cp+0933,  0x80FA687F881C7F8F,  -876 },  // 1.0e+281
+    { 0x1.B8B8A6038AD6Fp+0936,  0xCE5D73FF402D98E4,  -880 },  // 1.0e+282
+    { 0x1.137367C236C66p+0940,  0xA5178FFF668AE0B7,  -883 },  // 1.0e+283
+    { 0x1.585041B2C477Fp+0943,  0x8412D9991ED58092,  -886 },  // 1.0e+284
+    { 0x1.AE64521F7595Fp+0946,  0xD3515C2831559A84,  -890 },  // 1.0e+285
+    { 0x1.0CFEB353A97DBp+0950,  0xA90DE3535AAAE203,  -893 },  // 1.0e+286
+    { 0x1.503E602893DD2p+0953,  0x873E4F75E2224E69,  -896 },  // 1.0e+287
+    { 0x1.A44DF832B8D46p+0956,  0xD863B256369D4A41,  -900 },  // 1.0e+288
+    { 0x1.06B0BB1FB384Cp+0960,  0xAD1C8EAB5EE43B67,  -903 },  // 1.0e+289
+    { 0x1.485CE9E7A065Fp+0963,  0x8A7D3EEF7F1CFC53,  -906 },  // 1.0e+290
+    { 0x1.9A742461887F7p+0966,  0xDD95317F31C7FA1E,  -910 },  // 1.0e+291
+    { 0x1.008896BCF54FAp+0970,  0xB1442798F49FFB4B,  -913 },  // 1.0e+292
+    { 0x1.40AABC6C32A39p+0973,  0x8DD01FAD907FFC3C,  -916 },  // 1.0e+293
+    { 0x1.90D56B873F4C7p+0976,  0xE2E69915B3FFF9FA,  -920 },  // 1.0e+294
+    { 0x1.F50AC6690F1F9p+0979,  0xB58547448FFFFB2E,  -923 },  // 1.0e+295
+    { 0x1.3926BC01A973Cp+0983,  0x91376C36D99995BF,  -926 },  // 1.0e+296
+    { 0x1.87706B0213D0Ap+0986,  0xE858AD248F5C22CA,  -930 },  // 1.0e+297
+    { 0x1.E94C85C298C4Dp+0989,  0xB9E08A83A5E34F08,  -933 },  // 1.0e+298
+    { 0x1.31CFD3999F7B0p+0993,  0x94B3A202EB1C3F3A,  -936 },  // 1.0e+299
+    { 0x1.7E43C8800759Cp+0996,  0xEDEC366B11C6CB90,  -940 },  // 1.0e+300
+    { 0x1.DDD4BAA009303p+0999,  0xBE5691EF416BD60D,  -943 },  // 1.0e+301
+    { 0x1.2AA4F4A405BE2p+1003,  0x9845418C345644D7,  -946 },  // 1.0e+302
+    { 0x1.754E31CD072DAp+1006,  0xF3A20279ED56D48B,  -950 },  // 1.0e+303
+    { 0x1.D2A1BE4048F91p+1009,  0xC2E801FB244576D6,  -953 },  // 1.0e+304
+    { 0x1.23A516E82D9BBp+1013,  0x9BECCE62836AC578,  -956 },  // 1.0e+305
+    { 0x1.6C8E5CA239029p+1016,  0xF97AE3D0D2446F26,  -960 },  // 1.0e+306
+    { 0x1.C7B1F3CAC7434p+1019,  0xC795830D75038C1E,  -963 },  // 1.0e+307
+    { 0x1.1CCF385EBC8A0p+1023,  0x9FAACF3DF73609B2,  -966 },  // 1.0e+308
+  };
+
+// `exp10 = ROUND((exp2 - 57) * LOG2)` where `LOG2 = 0.30103`
+constexpr int s_decimal_exp_min = ((s_decimal_multipliers[0].exp2 - 57) * 30103LL + 50000LL) / 100000LL;
+
+enum fpclass : uint8_t
+  {
+    fpclass_norm  = 0,
+    fpclass_inf   = 1,
+    fpclass_nan   = 2,
+    fpclass_zero  = 3,
+    fpclass_sub   = 4,
+  };
+
+struct frexp
+  {
+    fpclass cls;
+    bool sign;
+    int exp;
+    uint64_t mant;
   };
 
 inline
-uint64_t
-do_get_max_bias(uint64_t ireg, uint32_t add, bool single)
+frexp
+do_frexp2_23(float value)
   {
-    uint64_t m = ireg >> (single ? 24 : 53);
-    m |= m >> 1;
-    m |= m >> 2;
-    m |= m >> 4;
-    return m * (55 + add) / 256;
+    // Extract the biased exponent and mantissa without the hidden bit.
+    uint32_t bits;
+    static_assert(sizeof(bits) == sizeof(value));
+    ::memcpy(&bits, &value, sizeof(bits));
+
+    frexp frx;
+    frx.cls = fpclass_norm;
+    frx.sign = (int32_t) bits < 0;
+    frx.exp = (int) (bits >> 23) & 0xFF;
+    frx.mant = bits & 0x7FFFFFULL;
+
+    if(frx.exp == 0xFF) {
+      // This may be an infinity or a NaN.
+      frx.cls = (frx.mant == 0) ? fpclass_inf : fpclass_nan;
+      return frx;
+    }
+
+    if(frx.exp == 0) {
+      // This may be a subnormal value or zero.
+      frx.cls = (frx.mant == 0) ? fpclass_zero : fpclass_sub;
+      if(frx.cls == fpclass_zero)
+        return frx;
+
+      // Normalize the subnormal value.
+      int sh = ROCKET_LZCNT64(frx.mant) - 40;
+      frx.exp -= sh - 1;
+      frx.mant <<= sh;
+    }
+
+    // Convert the exponent and mantissa back. The number will be
+    // interpreted as `sign 0x mant P (1 + exp)` in C99 hexadecimal
+    // floating-point notation.
+    frx.exp -= 150;
+    frx.mant |= 0x800000ULL;
+    return frx;
   }
 
-void
-do_xfrexp_F_dec(uint64_t& mant, int& exp, double value, bool single)
+inline
+frexp
+do_frexp2_52(double value)
   {
-    // Note if `value` is not finite then the behavior is undefined.
-    // Get the first digit.
-    double freg = ::std::fabs(value);
+    // Extract the biased exponent and mantissa without the hidden bit.
+    uint64_t bits;
+    static_assert(sizeof(bits) == sizeof(value));
+    ::memcpy(&bits, &value, sizeof(bits));
 
-    // Locate the last number in the table that is <= `freg`.
+    frexp frx;
+    frx.cls = fpclass_norm;
+    frx.sign = (int64_t) bits < 0;
+    frx.exp = (int) (bits >> 52) & 0x7FF;
+    frx.mant = bits & 0xFFFFFFFFFFFFFULL;
+
+    if(frx.exp == 0x7FF) {
+      // This may be an infinity or a NaN.
+      frx.cls = (frx.mant == 0) ? fpclass_inf : fpclass_nan;
+      return frx;
+    }
+
+    if(frx.exp == 0) {
+      // This may be a subnormal value or zero.
+      frx.cls = (frx.mant == 0) ? fpclass_zero : fpclass_sub;
+      if(frx.cls == fpclass_zero)
+        return frx;
+
+      // Normalize the subnormal value.
+      int sh = ROCKET_LZCNT64(frx.mant) - 11;
+      frx.exp -= sh - 1;
+      frx.mant <<= sh;
+    }
+
+    // Convert the exponent and mantissa back. The number will be
+    // interpreted as `sign 0x mant P (1 + exp)` in C99 hexadecimal
+    // floating-point notation.
+    frx.exp -= 1075;
+    frx.mant |= 0x10000000000000ULL;
+    return frx;
+  }
+
+inline
+frexp
+do_frexp10_8(float value)
+  {
+    // Extract the biased exponent and mantissa without the hidden bit.
+    uint32_t bits;
+    static_assert(sizeof(bits) == sizeof(value));
+    ::memcpy(&bits, &value, sizeof(bits));
+
+    frexp frx;
+    frx.cls = fpclass_norm;
+    frx.sign = (int32_t) bits < 0;
+    frx.exp = (int) (bits >> 23) & 0xFF;
+    frx.mant = bits & 0x7FFFFFULL;
+
+    if(frx.exp == 0xFF) {
+      // This may be an infinity or a NaN.
+      frx.cls = (frx.mant == 0) ? fpclass_inf : fpclass_nan;
+      return frx;
+    }
+
+    if(frx.exp == 0) {
+      // This may be a subnormal value or zero.
+      frx.cls = (frx.mant == 0) ? fpclass_zero : fpclass_sub;
+      if(frx.cls == fpclass_zero)
+        return frx;
+
+      // Normalize the subnormal value and remove the hidden bit.
+      int sh = ROCKET_LZCNT64(frx.mant) - 40;
+      frx.exp -= sh - 1;
+      frx.mant <<= sh;
+      frx.mant &= 0x7FFFFFULL;
+    }
+
+    // Get the multiplier for this value, using binary search. This
+    // will not become a subnormal double; no need to check that.
+    double abs_value;
+    uint64_t xbits = (uint64_t)(uint32_t) (frx.exp + 896) << 52 | frx.mant << 29;
+    ::memcpy(&abs_value, &xbits, sizeof(xbits));
+
     uint32_t bpos = 1;
-    uint32_t epos = (uint32_t) noadl::size(s_decmult_F);
+    uint32_t epos = (uint32_t) noadl::size(s_decimal_multipliers);
 
-    for(;;) {
-      // Stop if the range is empty.
-      if(bpos == epos) {
-        bpos = epos - 1;
-        break;
-      }
-
-      // Get the median.
+    while(bpos != epos) {
+      // book moves...
       uint32_t mpos = (bpos + epos) / 2;
-      const auto& bound = s_decmult_F[mpos].bound;
-
-      // Stops immediately if `freg` equals `bound`.
-      if(::std::memcmp(&freg, &bound, sizeof(double)) == 0) {
-        bpos = mpos;
-        break;
-      }
-
-      // Decend into either subrange.
-      if(freg < bound)
+      if(abs_value < s_decimal_multipliers[mpos].bound)
         epos = mpos;
       else
         bpos = mpos + 1;
     }
 
-    // Extract the biased exponent and mantissa without the hidden bit.
-    // This function requires `freg` to be normalized, finite and positive.
-    uint64_t ireg;
-    ::std::memcpy(&ireg, &freg, sizeof(double));
-    int bexp = (int)(ireg >> 52) & 0x7FF;
-    ireg &= 0xFFFFF'FFFFFFFF;
+    bpos --;
+    const auto& mult = s_decimal_multipliers[bpos];
 
-    if(bexp == 0) {
-      // The value is denormal.
-      // Adjust `ireg` such that its MSB is non-zero.
-      int sh = ROCKET_LZCNT64(ireg) - 11;
-      ireg <<= sh;
-      bexp -= sh - 1;
+    // Raise the value to (0,0x1p24) and convert it to an integer. This
+    // produces 9 significant digits.
+    xbits = (0x800000ULL | frx.mant) << (frx.exp + mult.exp2 - 182);
+    uint64_t half_ulp = 1ULL << (frx.exp + mult.exp2 - 183);
+    uint64_t ceiled_mult_mant = (mult.mant + UINT32_MAX) >> 32;
+    uint32_t mant_min = (uint32_t) ((xbits - half_ulp) *  ceiled_mult_mant  / 1000000000ULL + 1ULL);
+    uint32_t mant_max = (uint32_t) ((xbits + half_ulp) * (ceiled_mult_mant - 1ULL) / 1000000000ULL);
 
-      // Remove the hidden bit.
-      ROCKET_ASSERT((ireg >> 52) == 1);
-      ireg &= 0xFFFFF'FFFFFFFF;
+    // Round the mantissa to shortest. This is done by removing trailing
+    // digits one by one, until the result would be out of range.
+    bits = mant_min + (mant_max - mant_min) / 2;
+    uint32_t mant_next = bits;
+    uint32_t next_digits = bits;
+    uint32_t next_mult = 1U;
+
+    while((mant_next >= mant_min) && (mant_next <= mant_max)) {
+      // Shift one digit from `next_digits` to `next_mult`.
+      bits = mant_next;
+      uint32_t carry = (4U - next_digits % 10U) >> 31;
+      next_digits /= 10U;
+      next_digits += carry;
+      next_mult *= 10U;
+      mant_next = next_digits * next_mult;
     }
 
-    // Adjust the exponent.
-    // This shall not cause overflows.
-    const auto& mult = s_decmult_F[bpos];
-    bexp += mult.exp2;
-
-    // Compose the new value.
-    ireg |= (uint64_t)(uint32_t)bexp << 52;
-    ::std::memcpy(&freg, &ireg, sizeof(double));
-
-    // On x86, conversion from `double` to `int64_t` is very inefficient.
-    // We make use of only 63 bits, so this can be optimized by casting the
-    // floating-point number to `int64_t`, followed by conversion to `uint64_t`.
-    ireg = (uint64_t)(int64_t)freg;
-
-    // Calculate the max tolerable bias of the final digits.
-    // Note `mbias_lo` is a bit smaller because `ireg` was truncated towards zero.
-    uint64_t mbias_lo = do_get_max_bias(ireg - 1, 0, single);
-    uint64_t mbias_hi = do_get_max_bias(ireg + 1, 1, single);
-
-    // Multiply two 64-bit values and get the high-order half.
-    // This produces 18 significant figures.
-#ifdef __SIZEOF_INT128__
-    ireg = (uint64_t) (((unsigned __int128) ireg * mult.mant) >> 64);
-#else
-    // This is inspired by `Emulate64x64to128` from
-    //   https://github.com/catid/fp61/blob/master/fp61.h
-    uint64_t xhi = ireg >> 32;
-    uint64_t xlo = ireg << 32 >> 32;
-    uint64_t yhi = mult.mant >> 32;
-    uint64_t ylo = mult.mant << 32 >> 32;
-
-    ireg = (xlo * ylo >> 32) + xhi * ylo + (uint32_t) (xlo * yhi);
-    ireg >>= 32;
-    ireg += (xlo * yhi >> 32) + xhi * yhi
-#endif  // `__int128`
-
-    // Round the mantissa. We now have 18 digits.
-    uint64_t tz_mult = single ? UINT64_C(1000000000) : UINT64_C(10);
-    uint64_t next = ireg / tz_mult;
-
-    int tzcnt_lo = -1;
-    uint64_t bound_lo = ireg;
-    int tzcnt_hi = -1;
-    uint64_t bound_hi = ireg;
-
-    for(;;) {
-      uint64_t bound_next = next * tz_mult;
-      if(tzcnt_lo < 0) {
-        // Try removing a trailing zero from the lower bound.
-        ROCKET_ASSERT(ireg >= bound_next);
-        if(ireg - bound_next <= mbias_lo) {
-          // Record a digit if the result is close enough.
-          tzcnt_lo -= 1;
-          bound_lo = bound_next;
-        }
-        else
-          tzcnt_lo ^= -1;
-      }
-
-      bound_next += tz_mult;
-      if(tzcnt_hi < 0) {
-        // Try removing a trailing zero from the upper bound.
-        ROCKET_ASSERT(bound_next >= ireg);
-        if(bound_next - ireg <= mbias_hi) {
-          // Record a digit if the result is close enough.
-          tzcnt_hi -= 1;
-          bound_hi = bound_next;
-        }
-        else
-          tzcnt_hi ^= -1;
-      }
-
-      // If neither bound can be ajusted any further, stop.
-      if((tzcnt_lo | tzcnt_hi) >= 0)
-        break;
-
-      next /= 10;
-      tz_mult *= 10;
-    }
-
-    // Pick the bound with more trailing zeroes if their counts don't equal.
-    // Pick the nestest bound otherwise, rounding upwards on a par.
-    if(tzcnt_lo != tzcnt_hi)
-      next = (tzcnt_lo > tzcnt_hi) ? bound_lo : bound_hi;
-    else
-      next = (ireg - bound_lo < bound_hi - ireg) ? bound_lo : bound_hi;
-
-    // Check for carries.
-    if(next >= 1000'00000'00000'00000) {
-      ireg = next / 10;
-      bpos += 1;
-    }
-    else
-      ireg = next;
-
-    // Return the mantissa and exponent.
-    mant = ireg;
-    exp = static_cast<int>(bpos) - 324;
+    frx.exp = (int) bpos - s_decimal_exp_min - 8;
+    frx.mant = bits;
+    return frx;
   }
 
-void
-do_xput_M_dec(char*& ep, uint64_t mant, const char* rdxp)
+inline
+frexp
+do_frexp10_17(double value)
   {
-    // Write digits in normal order.
-    uint64_t ireg = mant;
-    while(ireg != 0) {
-      uint64_t quo = ireg / 100'00000'00000'00000;
-      ireg %= 100'00000'00000'00000;
-      uint8_t dval = static_cast<uint8_t>(quo);
-      ireg *= 10;
+    // Extract the biased exponent and mantissa without the hidden bit.
+    uint64_t bits;
+    static_assert(sizeof(bits) == sizeof(value));
+    ::memcpy(&bits, &value, sizeof(bits));
 
-      // Insert a decimal point before `rdxp`.
-      if(ep == rdxp)
-        *(ep++) = '.';
+    frexp frx;
+    frx.cls = fpclass_norm;
+    frx.sign = (int64_t) bits < 0;
+    frx.exp = (int) (bits >> 52) & 0x7FF;
+    frx.mant = bits & 0xFFFFFFFFFFFFFULL;
 
-      // Write this digit.
-      *(ep++) = do_pdigit_X(dval);
+    if(frx.exp == 0x7FF) {
+      // This may be an infinity or a NaN.
+      frx.cls = (frx.mant == 0) ? fpclass_inf : fpclass_nan;
+      return frx;
     }
 
-    // If `rdxp` is set and no decimal point has been added so far,
-    // fill zeroes until it is reached.
-    if(rdxp)
-      while(ep < rdxp)
-        *(ep++) = '0';
+    if(frx.exp == 0) {
+      // This may be a subnormal value or zero.
+      frx.cls = (frx.mant == 0) ? fpclass_zero : fpclass_sub;
+      if(frx.cls == fpclass_zero)
+        return frx;
+
+      // Normalize the subnormal value and remove the hidden bit.
+      int sh = ROCKET_LZCNT64(frx.mant) - 11;
+      frx.exp -= sh - 1;
+      frx.mant <<= sh;
+      frx.mant &= 0xFFFFFFFFFFFFFULL;
+    }
+
+    // Get the multiplier for this value, using binary search.
+    double abs_value;
+    bits &= 0x7FFFFFFFFFFFFFFFULL;
+    ::memcpy(&abs_value, &bits, sizeof(bits));
+
+    uint32_t bpos = 1;
+    uint32_t epos = (uint32_t) noadl::size(s_decimal_multipliers);
+
+    while(bpos != epos) {
+      // book moves...
+      uint32_t mpos = (bpos + epos) / 2;
+      if(abs_value < s_decimal_multipliers[mpos].bound)
+        epos = mpos;
+      else
+        bpos = mpos + 1;
+    }
+
+    bpos --;
+    const auto& mult = s_decimal_multipliers[bpos];
+
+    // Raise the value to (0,0x1p53) and convert it to an integer. This
+    // produces 18 significant digits.
+    bits = (0x10000000000000ULL | frx.mant) << (frx.exp + mult.exp2 - 1075);
+    uint64_t half_ulp = 1ULL << (frx.exp + mult.exp2 - 1076);
+    uint64_t mant_min = mulh128(bits - half_ulp, mult.mant) + 1ULL;
+    uint64_t mant_max = mulh128(bits + half_ulp, mult.mant - 1ULL);
+
+    // Round the mantissa to shortest. This is done by removing trailing
+    // digits one by one, until the result would be out of range.
+    bits = mant_min + (mant_max - mant_min) / 2;
+    uint64_t mant_next = bits;
+    uint64_t next_digits = bits;
+    uint64_t next_mult = 1U;
+
+    while((mant_next >= mant_min) && (mant_next <= mant_max)) {
+      // Shift one digit from `next_digits` to `next_mult`.
+      bits = mant_next;
+      uint64_t carry = (4ULL - next_digits % 10U) >> 63;
+      next_digits /= 10U;
+      next_digits += carry;
+      next_mult *= 10U;
+      mant_next = next_digits * next_mult;
+    }
+
+    frx.exp = (int) bpos - s_decimal_exp_min - 17;
+    frx.mant = bits;
+    return frx;
+  }
+
+inline
+bool
+do_is_special_class(const char*& str_out, uint32_t& len_out, const frexp& frx)
+  {
+    switch((uint32_t) frx.cls) {
+      case fpclass_inf:
+        str_out = "-infinity" + (1U - frx.sign);
+        len_out = 8U + frx.sign;
+        return true;
+
+      case fpclass_nan:
+        str_out = "-nan" + (1U - frx.sign);
+        len_out = 3U + frx.sign;
+        return true;
+
+      case fpclass_zero:
+        str_out = s_small_decimals[0] + (1U - frx.sign);
+        len_out = 1U + frx.sign;
+        return true;
+
+      default:
+        return false;
+    }
+  }
+
+inline
+void
+do_write_zeroes(char*& wptr, uint32_t len)
+  {
+    for(uint32_t k = len;  k != 0;  --k) {
+      // Prevent optimization...
+      (volatile char&) *wptr = '0';
+      wptr ++;
+    }
+  }
+
+inline
+void
+do_write_mantissa(char*& wptr, uint64_t mant, uint64_t divisor, uint32_t base, const char* rdxpp_opt)
+  {
+    uint64_t reg = mant;
+    uint32_t len = 0;
+
+    while(reg != 0) {
+      // Pop a digit from `reg` and write it.
+      uint64_t digit = reg / divisor;
+      reg %= divisor;
+      reg *= base;
+
+      if(wptr == rdxpp_opt) {
+        // Skip the radix point which is set by the caller.
+        wptr ++;
+        len ++;
+      }
+
+      *wptr = (char) ('0' + digit + ((9U - digit) >> 61));
+      wptr ++;
+      len ++;
+    }
+
+    while(rdxpp_opt && (wptr < rdxpp_opt)) {
+      // Append zeroes up to `rdxp_opt`. The string will end there so
+      // don't write a radix point.
+      *wptr = '0';
+      wptr ++;
+      len ++;
+    }
+  }
+
+inline
+void
+do_write_exp(char*& wptr, int exp)
+  {
+    uint32_t abs_exp = (uint32_t) ::std::abs(exp);
+    uint32_t len = 0;
+
+    // The exponent always has a sign symbol.
+    *wptr = (exp == (int) abs_exp) ? '+' : '-';
+    wptr ++;
+    len ++;
+
+    // Get the static string.
+    const char* digits;
+    uint32_t ndigits;
+
+    if(abs_exp < 100U) {
+      // Ensure at least two significant digits, like POSIX.
+      do_get_small_decimal(digits, ndigits, 100U + abs_exp);
+      digits ++;
+      ndigits --;
+    }
+    else
+      do_get_small_decimal(digits, ndigits, abs_exp);
+
+    while(ndigits != 0) {
+      // Copy a significant digit, in normal order.
+      *wptr = *digits;
+      digits ++;
+      ndigits --;
+      wptr ++;
+      len ++;
+    }
   }
 
 }  // namespace
 
-ascii_numput&
+void
 ascii_numput::
 put_TB(bool value) noexcept
   {
-    this->clear();
+    this->m_data = "false\0true" + 6U * value;
+    this->m_size = 5U - value;
+  }
 
-    // Get the template string literal. The internal storage is unused.
-    if(value) {
-      char* str = const_cast<char*>("true");
-      this->m_bptr = str;
-      this->m_eptr = str + 4;
+void
+ascii_numput::
+put_XP(const volatile void* value) noexcept
+  {
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, (uintptr_t) value, 16, 1);
+    wptr -= 2;
+    ::memcpy(wptr, "0x", 2);
+    ntotal += 2;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_BU(uint64_t value, uint32_t precision) noexcept
+  {
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, value, 2, precision);
+    wptr -= 2;
+    ::memcpy(wptr, "0b", 2);
+    ntotal += 2;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_XU(uint64_t value, uint32_t precision) noexcept
+  {
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, value, 16, precision);
+    wptr -= 2;
+    ::memcpy(wptr, "0x", 2);
+    ntotal += 2;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_DU(uint64_t value, uint32_t precision) noexcept
+  {
+    if((precision == 1) && (value < noadl::size(s_small_decimals))) {
+      // Get the static string.
+      do_get_small_decimal(this->m_data, this->m_size, (uint32_t) value);
+      return;
+    }
+
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, value, 10, precision);
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_BI(int64_t value, uint32_t precision) noexcept
+  {
+    if(value >= 0)
+      return this->put_BU((uint64_t) value, precision);
+
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, -(uint64_t) value, 2, precision);
+    wptr -= 3;
+    ::memcpy(wptr, "-0b", 3);
+    ntotal += 3;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_XI(int64_t value, uint32_t precision) noexcept
+  {
+    if(value >= 0)
+      return this->put_XU((uint64_t) value, precision);
+
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, -(uint64_t) value, 16, precision);
+    wptr -= 3;
+    ::memcpy(wptr, "-0x", 3);
+    ntotal += 3;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_DI(int64_t value, uint32_t precision) noexcept
+  {
+    if(value >= 0)
+      return this->put_DU((uint64_t) value, precision);
+
+    if((precision == 1) && (-(uint64_t) value < noadl::size(s_small_decimals))) {
+      // Get the static string.
+      do_get_small_decimal(this->m_data, this->m_size, -(uint32_t) value);
+      this->m_data -= 1;
+      this->m_size += 1;
+      return;
+    }
+
+    char* wptr = ::std::end(this->m_stor);
+    *--wptr = 0;
+
+    uint32_t ntotal = do_write_digits_backwards(wptr, -(uint64_t) value, 10, precision);
+    wptr -= 1;
+    wptr[0] = '-';
+    ntotal += 1;
+
+    this->m_data = wptr;
+    this->m_size = ntotal;
+  }
+
+void
+ascii_numput::
+put_BF(float value) noexcept
+  {
+    frexp frx = do_frexp2_23(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
+
+    frx.exp += 23;
+
+    ::memcpy(this->m_stor, "-0b0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
+
+    if((frx.exp < -4) || (frx.exp >= 24)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 2, rdxpp);
+      *wptr = 'p';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 2, nullptr);
     }
     else {
-      char* str = const_cast<char*>("false");
-      this->m_bptr = str;
-      this->m_eptr = str + 5;
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 2, rdxpp);
     }
-    return *this;
+
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_XP(const void* value) noexcept
+put_BEF(float value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
+    frexp frx = do_frexp2_23(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Append a null terminator.
-    *bp = 0;
+    frx.exp += 23;
 
-    // Write digits backwards.
-    do_xput_U_bkwd(bp, reinterpret_cast<uintptr_t>(value), 16, 1);
+    ::memcpy(this->m_stor, "-0b0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
 
-    // Prepend the hexadecimal prefix.
-    *(--bp) = 'x';
-    *(--bp) = '0';
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 0x1p23, 2, rdxpp);
+    *wptr = 'p';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp);
 
-    // Set the string, which resides in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_BU(uint64_t value, size_t precision) noexcept
+put_XF(float value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
+    frexp frx = do_frexp2_23(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Append a null terminator.
-    *bp = 0;
+    frx.exp += 23;
+    frx.mant <<= frx.exp & 3;
+    frx.exp >>= 2;
 
-    // Write digits backwards.
-    do_xput_U_bkwd(bp, value, 2, precision);
+    ::memcpy(this->m_stor, "-0x0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
 
-    // Prepend the binary prefix.
-    *(--bp) = 'b';
-    *(--bp) = '0';
-
-    // Set the string, which resides in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
-  }
-
-ascii_numput&
-ascii_numput::
-put_XU(uint64_t value, size_t precision) noexcept
-  {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
-
-    // Append a null terminator.
-    *bp = 0;
-
-    // Write digits backwards.
-    do_xput_U_bkwd(bp, value, 16, precision);
-
-    // Prepend the hexadecimal prefix.
-    *(--bp) = 'x';
-    *(--bp) = '0';
-
-    // Set the string, which resides in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
-  }
-
-ascii_numput&
-ascii_numput::
-put_DU(uint64_t value, size_t precision) noexcept
-  {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
-
-    if((value < noadl::size(s_decimals)) && (precision == 1)) {
-      // Get the template string literal. The internal storage is unused.
-      // This starts with a minus sign that has to be skipped.
-      bp = const_cast<char*>(s_decimals[value]) + 1;
-      ep = bp + do_small_strlen(bp);
+    if((frx.exp < -4) || (frx.exp >= 6)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 16, rdxpp);
+      *wptr = 'p';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp * 4);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 16, nullptr);
     }
     else {
-      // Append a null terminator.
-      *bp = 0;
-
-      // Write digits backwards.
-      do_xput_U_bkwd(bp, value, 10, precision);
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p23, 16, rdxpp);
     }
 
-    // Set the string, which may or may not reside in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_BI(int64_t value, size_t precision) noexcept
+put_XEF(float value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
-    uint64_t sign = do_cast_U(value >> 63);
-    uint64_t absval = (do_cast_U(value) ^ sign) - sign;
+    frexp frx = do_frexp2_23(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Append a null terminator.
-    *bp = 0;
+    frx.exp += 23;
+    frx.mant <<= frx.exp & 3;
+    frx.exp >>= 2;
 
-    // Write digits backwards using its absolute value without causing overflows.
-    do_xput_U_bkwd(bp, absval, 2, precision);
+    ::memcpy(this->m_stor, "-0x0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
 
-    // Prepend the binary prefix.
-    *(--bp) = 'b';
-    *(--bp) = '0';
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 0x1p23, 16, rdxpp);
+    *wptr = 'p';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp * 4);
 
-    // If the number is negative, prepend a minus sign.
-    if(sign)
-      *(--bp) = '-';
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
 
-    // Set the string, which resides in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_XI(int64_t value, size_t precision) noexcept
+put_DF(float value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
-    uint64_t sign = do_cast_U(value >> 63);
-    uint64_t absval = (do_cast_U(value) ^ sign) - sign;
+    frexp frx = do_frexp10_8(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Append a null terminator.
-    *bp = 0;
+    frx.exp += 8;
 
-    // Write digits backwards using its absolute value without causing overflows.
-    do_xput_U_bkwd(bp, absval, 16, precision);
+    ::memcpy(this->m_stor, "-0.", 4);
+    char* wptr = ::std::begin(this->m_stor) + 1;
 
-    // Prepend the hexadecimal prefix.
-    *(--bp) = 'x';
-    *(--bp) = '0';
-
-    // If the number is negative, prepend a minus sign.
-    if(sign)
-      *(--bp) = '-';
-
-    // Set the string, which resides in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
-  }
-
-ascii_numput&
-ascii_numput::
-put_DI(int64_t value, size_t precision) noexcept
-  {
-    this->clear();
-    char* bp = this->m_stor + M;
-    char* ep = bp;
-    uint64_t sign = do_cast_U(value >> 63);
-    uint64_t absval = (do_cast_U(value) ^ sign) - sign;
-
-    if((absval < noadl::size(s_decimals)) && (precision == 1)) {
-      // Get the template string literal. The internal storage is unused.
-      // This starts with a minus sign that has to be skipped for non-negative numbers.
-      bp = const_cast<char*>(s_decimals[absval]) + 1 + sign;
-      ep = bp + do_small_strlen(bp);
+    if((frx.exp < -4) || (frx.exp >= 9)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 1e8, 10, rdxpp);
+      *wptr = 'e';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 1e8, 10, nullptr);
     }
     else {
-      // Append a null terminator.
-      *bp = 0;
-
-      // Write digits backwards using its absolute value without causing overflows.
-      do_xput_U_bkwd(bp, absval, 10, precision);
-
-      // If the number is negative, prepend a minus sign.
-      if(sign)
-        *(--bp) = '-';
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 1e8, 10, rdxpp);
     }
 
-    // Set the string, which may or may not reside in the internal storage.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_BF(double value, bool single) noexcept
+put_DEF(float value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp10_8(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
-    }
-    else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
+    frx.exp += 8;
 
-      // Prepend the binary prefix.
-      *(ep++) = '0';
-      *(ep++) = 'b';
+    ::memcpy(this->m_stor, "-0.", 4);
+    char* wptr = ::std::begin(this->m_stor) + 1;
 
-      // Break the number down into fractional and exponential parts. This result is exact.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_bin(mant, exp, value);
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 1e8, 10, rdxpp);
+    *wptr = 'e';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp);
 
-      // Write the broken-down number...
-      if((exp < -4) || ((single ? 24 : 53) <= exp)) {
-        // ... in scientific notation.
-        do_xput_M_bin(ep, mant, ep + 1);
-        *(ep++) = 'p';
-        do_xput_I_exp(ep, exp);
-      }
-      else if(exp < 0) {
-        // ... in plain format; the number starts with "0."; zeroes are prepended as necessary.
-        *(ep++) = '0';
-        *(ep++) = '.';
-        for_range(exp, -1, [&](int) { *(ep++) = '0';  });
-        do_xput_M_bin(ep, mant, nullptr);
-      }
-      else {
-        // ... in plain format; the decimal point is inserted in the middle.
-        do_xput_M_bin(ep, mant, ep + 1 + do_cast_U(exp));
-      }
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
 
-      // Append a null terminator.
-      *ep = 0;
-    }
-
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_BE(double value, bool /*single*/) noexcept
+put_BD(double value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp2_52(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
+    frx.exp += 52;
+
+    ::memcpy(this->m_stor, "-0b0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
+
+    if((frx.exp < -4) || (frx.exp >= 53)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 2, rdxpp);
+      *wptr = 'p';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 2, nullptr);
     }
     else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
-
-      // Prepend the binary prefix.
-      *(ep++) = '0';
-      *(ep++) = 'b';
-
-      // Break the number down into fractional and exponential parts. This result is exact.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_bin(mant, exp, value);
-
-      // Write the broken-down number in scientific notation.
-      do_xput_M_bin(ep, mant, ep + 1);
-      *(ep++) = 'p';
-      do_xput_I_exp(ep, exp);
-
-      // Append a null terminator.
-      *ep = 0;
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 2, rdxpp);
     }
 
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_XF(double value, bool single) noexcept
+put_BED(double value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp2_52(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
-    }
-    else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
+    frx.exp += 52;
 
-      // Prepend the hexadecimal prefix.
-      *(ep++) = '0';
-      *(ep++) = 'x';
+    ::memcpy(this->m_stor, "-0b0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
 
-      // Break the number down into fractional and exponential parts. This result is exact.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_bin(mant, exp, value);
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 0x1p52, 2, rdxpp);
+    *wptr = 'p';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp);
 
-      // Normalize the integral part so it is the maximum value in the range [0,16).
-      mant >>= ~exp & 3;
-      exp >>= 2;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
 
-      // Write the broken-down number...
-      if((exp < -4) || ((single ? 6 : 14) <= exp)) {
-        // ... in scientific notation.
-        do_xput_M_hex(ep, mant, ep + 1);
-        *(ep++) = 'p';
-        do_xput_I_exp(ep, exp * 4);
-      }
-      else if(exp < 0) {
-        // ... in plain format; the number starts with "0."; zeroes are prepended as necessary.
-        *(ep++) = '0';
-        *(ep++) = '.';
-        for_range(exp, -1, [&](int) { *(ep++) = '0';  });
-        do_xput_M_hex(ep, mant, nullptr);
-      }
-      else
-        // ... in plain format; the decimal point is inserted in the middle.
-        do_xput_M_hex(ep, mant, ep + 1 + do_cast_U(exp));
-
-      // Append a null terminator.
-      *ep = 0;
-    }
-
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_XE(double value, bool /*single*/) noexcept
+put_XD(double value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp2_52(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
+    frx.exp += 52;
+    frx.mant <<= frx.exp & 3;
+    frx.exp >>= 2;
+
+    ::memcpy(this->m_stor, "-0x0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
+
+    if((frx.exp < -4) || (frx.exp >= 14)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 16, rdxpp);
+      *wptr = 'p';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp * 4);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 16, nullptr);
     }
     else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
-
-      // Prepend the hexadecimal prefix.
-      *(ep++) = '0';
-      *(ep++) = 'x';
-
-      // Break the number down into fractional and exponential parts. This result is exact.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_bin(mant, exp, value);
-
-      // Normalize the integral part so it is the maximum value in the range [0,16).
-      mant >>= ~exp & 3;
-      exp >>= 2;
-
-      // Write the broken-down number in scientific notation.
-      do_xput_M_hex(ep, mant, ep + 1);
-      *(ep++) = 'p';
-      do_xput_I_exp(ep, exp * 4);
-
-      // Append a null terminator.
-      *ep = 0;
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 0x1p52, 16, rdxpp);
     }
 
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_DF(double value, bool single) noexcept
+put_XED(double value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp2_52(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
-    }
-    else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
+    frx.exp += 52;
+    frx.mant <<= frx.exp & 3;
+    frx.exp >>= 2;
 
-      // Break the number down into fractional and exponential parts. This result is approximate.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_dec(mant, exp, value, single);
+    ::memcpy(this->m_stor, "-0x0.**", 8);
+    char* wptr = ::std::begin(this->m_stor) + 3;
 
-      // Write the broken-down number...
-      if((exp < -4) || ((single ? 9 : 17) <= exp)) {
-        // ... in scientific notation.
-        do_xput_M_dec(ep, mant, ep + 1);
-        *(ep++) = 'e';
-        do_xput_I_exp(ep, exp);
-      }
-      else if(exp < 0) {
-        // ... in plain format; the number starts with "0."; zeroes are prepended as necessary.
-        *(ep++) = '0';
-        *(ep++) = '.';
-        for_range(exp, -1, [&](int) { *(ep++) = '0';  });
-        do_xput_M_dec(ep, mant, nullptr);
-      }
-      else
-        // ... in plain format; the decimal point is inserted in the middle.
-        do_xput_M_dec(ep, mant, ep + 1 + do_cast_U(exp));
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 0x1p52, 16, rdxpp);
+    *wptr = 'p';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp * 4);
 
-      // Append a null terminator.
-      *ep = 0;
-    }
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
 
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
-ascii_numput&
+void
 ascii_numput::
-put_DE(double value, bool single) noexcept
+put_DD(double value) noexcept
   {
-    this->clear();
-    char* bp = this->m_stor;
-    char* ep = bp;
-    int sign = ::std::signbit(value) ? -1 : 0;
+    frexp frx = do_frexp10_17(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
 
-    // Treat non-finite values and zeroes specially.
-    if(do_check_special(bp, ep, value)) {
-      // Use the template string literal, which is immutable.
-      // Skip the minus sign if the sign bit is clear.
-      bp += do_cast_U(sign + 1);
+    frx.exp += 17;
+
+    ::memcpy(this->m_stor, "-0.", 4);
+    char* wptr = ::std::begin(this->m_stor) + 1;
+
+    if((frx.exp < -4) || (frx.exp >= 17)) {
+      // Write the number in scientific notation.
+      char* rdxpp = wptr + 1;
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 1e17, 10, rdxpp);
+      *wptr = 'e';
+      wptr += 1;
+      do_write_exp(wptr, frx.exp);
+    }
+    else if(frx.exp < 0) {
+      // Write the number in plain format. The number starts with
+      // `0.` and zeroes are filled as necessary.
+      wptr += 2;
+      do_write_zeroes(wptr, -(uint32_t) (frx.exp + 1));
+      do_write_mantissa(wptr, frx.mant, 1e17, 10, nullptr);
     }
     else {
-      // Prepend a minus sign if the number is negative.
-      if(sign)
-        *(ep++) = '-';
-
-      // Break the number down into fractional and exponential parts. This result is approximate.
-      uint64_t mant;
-      int exp;
-      do_xfrexp_F_dec(mant, exp, value, single);
-
-      // Write the broken-down number in scientific notation.
-      do_xput_M_dec(ep, mant, ep + 1);
-      *(ep++) = 'e';
-      do_xput_I_exp(ep, exp);
-
-      // Append a null terminator.
-      *ep = 0;
+      // Write the number in plain format. A decimal point will be
+      // inserted in the middle.
+      char* rdxpp = wptr + (uint32_t) (frx.exp + 1);
+      *rdxpp = this->m_rdxp;
+      do_write_mantissa(wptr, frx.mant, 1e17, 10, rdxpp);
     }
 
-    // Set the string. The internal storage is used for finite values only.
-    this->m_bptr = bp;
-    this->m_eptr = ep;
-    return *this;
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
+  }
+
+void
+ascii_numput::
+put_DED(double value) noexcept
+  {
+    frexp frx = do_frexp10_17(value);
+    if(do_is_special_class(this->m_data, this->m_size, frx))
+      return;
+
+    frx.exp += 17;
+
+    ::memcpy(this->m_stor, "-0.", 4);
+    char* wptr = ::std::begin(this->m_stor) + 1;
+
+    // Write the number in scientific notation.
+    char* rdxpp = wptr + 1;
+    *rdxpp = this->m_rdxp;
+    do_write_mantissa(wptr, frx.mant, 1e17, 10, rdxpp);
+    *wptr = 'e';
+    wptr += 1;
+    do_write_exp(wptr, frx.exp);
+
+    ROCKET_ASSERT(wptr < ::std::end(this->m_stor));
+    *wptr = 0;
+
+    this->m_data = this->m_stor + (1U - frx.sign);
+    this->m_size = (uint32_t) (wptr - this->m_data);
   }
 
 }  // namespace rocket

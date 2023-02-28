@@ -640,13 +640,13 @@ std_numeric_format(V_real value, optV_integer base, optV_integer ebase)
     switch(base.value_or(10)) {
       case 2: {
         if(!ebase) {
-          nump.put_BF(value);  // binary, float
+          nump.put_BD(value);  // binary, float
           text.append(nump.begin(), nump.end());
           break;
         }
 
         if(*ebase == 2) {
-          nump.put_BE(value);  // binary, scientific
+          nump.put_BED(value);  // binary, scientific
           text.append(nump.begin(), nump.end());
           break;
         }
@@ -657,13 +657,13 @@ std_numeric_format(V_real value, optV_integer base, optV_integer ebase)
 
       case 16: {
         if(!ebase) {
-          nump.put_XF(value);  // hexadecimal, float
+          nump.put_XD(value);  // hexadecimal, float
           text.append(nump.begin(), nump.end());
           break;
         }
 
         if(*ebase == 2) {
-          nump.put_XE(value);  // hexadecimal, scientific
+          nump.put_XED(value);  // hexadecimal, scientific
           text.append(nump.begin(), nump.end());
           break;
         }
@@ -675,13 +675,13 @@ std_numeric_format(V_real value, optV_integer base, optV_integer ebase)
 
       case 10: {
         if(!ebase) {
-          nump.put_DF(value);  // decimal, float
+          nump.put_DD(value);  // decimal, float
           text.append(nump.begin(), nump.end());
           break;
         }
 
         if(*ebase == 10) {
-          nump.put_DE(value);  // decimal, scientific
+          nump.put_DED(value);  // decimal, scientific
           text.append(nump.begin(), nump.end());
           break;
         }
@@ -703,35 +703,28 @@ Value
 std_numeric_parse(V_string text)
   {
     static constexpr char s_spaces[] = " \f\n\r\t\v";
-    auto tpos = text.find_first_not_of(s_spaces);
+    size_t tpos = text.find_first_not_of(s_spaces);
     if(tpos == V_string::npos)
       ASTERIA_THROW_RUNTIME_ERROR(("Blank string"));
 
-    auto fbptr = text.data() + tpos;
-    auto ibptr = fbptr;
-    auto eptr = text.data() + text.find_last_not_of(s_spaces) + 1;
-
     // Try parsing the string as a real number first.
     ::rocket::ascii_numget numg;
-    if(!numg.parse_F(fbptr, eptr))
+    size_t tlen = text.find_last_not_of(s_spaces) + 1 - tpos;
+    if(numg.parse_D(text.data() + tpos, tlen) != tlen)
       ASTERIA_THROW_RUNTIME_ERROR((
           "String not convertible to a number (text `$1`)"), text);
 
-    if(fbptr != eptr)
-      ASTERIA_THROW_RUNTIME_ERROR((
-          "Non-numeric character in string (character `$1`)"), *fbptr);
+    if(text.find('.') == V_string::npos) {
+      // Check whether the value fits in an integer. If so, return it exact.
+      V_integer ival;
+      numg.cast_I(ival, INT64_MIN, INT64_MAX);
+      if(!numg.overflowed() && !numg.underflowed() && !numg.inexact())
+        return ival;
+    }
 
+    // ... no, so return a (maybe approximate) real number.
     V_real fval;
-    numg.cast_F(fval, -HUGE_VAL, HUGE_VAL);
-
-    // Check whether the value fits in an integer.
-    V_integer ival;
-    if(numg.parse_I(ibptr, eptr)  // accepted?
-       && (ibptr == eptr)         // no junk character?
-       && numg.cast_I(ival, INT64_MIN, INT64_MAX))  // within range?
-      return ival;
-
-    // Accept any underflowed or overflowed result as a real.
+    numg.cast_D(fval, -HUGE_VAL, HUGE_VAL);
     return fval;
   }
 

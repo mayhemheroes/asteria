@@ -82,8 +82,7 @@ class Infix_Element
     constexpr
     Infix_Element(XElemT&& xelem)
       noexcept(::std::is_nothrow_constructible<decltype(m_stor), XElemT&&>::value)
-      : m_stor(::std::forward<XElemT>(xelem))
-      { }
+      : m_stor(::std::forward<XElemT>(xelem))  { }
 
     template<typename XElemT,
     ROCKET_ENABLE_IF(::std::is_assignable<decltype(m_stor)&, XElemT&&>::value)>
@@ -112,7 +111,7 @@ class Infix_Element
     tell_precedence() const noexcept;
 
     // Moves all units into `units`.
-    Infix_Element&
+    void
     extract(cow_vector<Expression_Unit>& units);
 
     // Returns a reference where new units will be appended.
@@ -123,7 +122,9 @@ class Infix_Element
 inline
 void
 swap(Infix_Element& lhs, Infix_Element& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

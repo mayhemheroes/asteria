@@ -31,15 +31,13 @@ class reference_wrapper
     ROCKET_ENABLE_IF(is_convertible<otherT*, valueT*>::value)>
     explicit constexpr
     reference_wrapper(otherT& other) noexcept
-      : m_ptr(::std::addressof(other))
-      { }
+      : m_ptr(::std::addressof(other))  { }
 
     template<typename otherT,
     ROCKET_ENABLE_IF(is_convertible<otherT*, valueT*>::value)>
     constexpr
     reference_wrapper(const reference_wrapper<otherT>& other) noexcept
-      : m_ptr(other.m_ptr)
-      { }
+      : m_ptr(other.m_ptr)  { }
 
   public:
     // access
@@ -62,13 +60,17 @@ template<typename valueT>
 constexpr
 reference_wrapper<const valueT>
 cref(valueT& value) noexcept
-  { return reference_wrapper<const valueT>(value);  }
+  {
+    return reference_wrapper<const valueT>(value);
+  }
 
 template<typename valueT>
 constexpr
 reference_wrapper<const valueT>
 cref(reference_wrapper<valueT> value) noexcept
-  { return reference_wrapper<const valueT>(value);  }
+  {
+    return reference_wrapper<const valueT>(value);
+  }
 
 template<typename valueT>
 constexpr
@@ -79,13 +81,17 @@ template<typename valueT>
 constexpr
 reference_wrapper<valueT>
 ref(valueT& value) noexcept
-  { return reference_wrapper<valueT>(value);  }
+  {
+    return reference_wrapper<valueT>(value);
+  }
 
 template<typename valueT>
 constexpr
 reference_wrapper<valueT>
 ref(reference_wrapper<valueT> value) noexcept
-  { return reference_wrapper<valueT>(value);  }
+  {
+    return reference_wrapper<valueT>(value);
+  }
 
 template<typename valueT>
 constexpr

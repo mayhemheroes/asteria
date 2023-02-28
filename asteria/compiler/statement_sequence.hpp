@@ -17,8 +17,7 @@ class Statement_Sequence
   public:
     explicit constexpr
     Statement_Sequence(const Compiler_Options& opts) noexcept
-      : m_opts(opts)
-      { }
+      : m_opts(opts)  { }
 
   public:
     ASTERIA_COPYABLE_DESTRUCTOR(Statement_Sequence);
@@ -36,11 +35,10 @@ class Statement_Sequence
         return this->m_opts;
       }
 
-    Statement_Sequence&
+    void
     set_options(const Compiler_Options& opts) noexcept
       {
         this->m_opts = opts;
-        return *this;
       }
 
     // These are accessors to the statements in this sequence.
@@ -53,24 +51,23 @@ class Statement_Sequence
     const cow_vector<Statement>&() const noexcept
       { return this->m_stmts;  }
 
-    Statement_Sequence&
+    void
     clear() noexcept
       {
         this->m_stmts.clear();
-        return *this;
       }
 
     // This function parses tokens from the input stream and fills
     // statements into `*this`. The contents of `*this` are destroyed.
     // This function throws a `Compiler_Error` upon failure.
-    Statement_Sequence&
+    void
     reload(Token_Stream&& tstrm);
 
     // This function parses a single expression (without trailing
     // semicolons) instead of a series of statements, as a `return`
     // statement.
     // This function throws a `Compiler_Error` upon failure.
-    Statement_Sequence&
+    void
     reload_oneline(Token_Stream&& tstrm);
   };
 

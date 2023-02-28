@@ -39,8 +39,7 @@ class basic_linear_buffer
   public:
     explicit constexpr
     basic_linear_buffer(const allocator_type& alloc) noexcept
-      : m_stor(alloc)
-      { }
+      : m_stor(alloc)  { }
 
     basic_linear_buffer(const basic_linear_buffer& other)
       : m_stor(allocator_traits<allocator_type>::select_on_container_copy_construction(
@@ -69,8 +68,7 @@ class basic_linear_buffer
 
     constexpr
     basic_linear_buffer() noexcept(is_nothrow_constructible<allocator_type>::value)
-      : basic_linear_buffer(allocator_type())
-      { }
+      : basic_linear_buffer(allocator_type())  { }
 
     basic_linear_buffer&
     operator=(const basic_linear_buffer& other) &
@@ -356,14 +354,14 @@ inline
 void
 swap(basic_linear_buffer<charT, traitsT, allocT>& lhs, basic_linear_buffer<charT, traitsT, allocT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
-extern
-template
+extern template
 class basic_linear_buffer<char>;
 
-extern
-template
+extern template
 class basic_linear_buffer<wchar_t>;
 
 using linear_buffer   = basic_linear_buffer<char>;

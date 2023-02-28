@@ -71,9 +71,7 @@ class Token
     constexpr
     Token(const Source_Location& xsloc, size_t xlen, XTokT&& xtok)
       noexcept(::std::is_nothrow_constructible<decltype(m_stor), XTokT&&>::value)
-      : m_sloc(xsloc), m_length(xlen),
-        m_stor(::std::forward<XTokT>(xtok))
-      { }
+      : m_sloc(xsloc), m_length(xlen), m_stor(::std::forward<XTokT>(xtok))  { }
 
     Token&
     swap(Token& other) noexcept
@@ -164,12 +162,16 @@ class Token
 inline
 void
 swap(Token& lhs, Token& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const Token& token)
-  { return token.print(fmt);  }
+  {
+    return token.print(fmt);
+  }
 
 }  // namespace asteria
 #endif

@@ -54,48 +54,9 @@ class mutex
             if(this->m_mtx == other.m_mtx)
               return *this;
 
-            this->do_unlock_if();
+            this->unlock();
             this->m_mtx = other.m_mtx;
             other.m_mtx = nullptr;
-            return *this;
-          }
-
-        ~unique_lock()
-          {
-            this->do_unlock_if();
-          }
-
-      private:
-        void
-        do_unlock_if() const noexcept
-          {
-            if(this->m_mtx)
-              this->m_mtx->unlock();
-          }
-
-      public:
-        explicit constexpr operator
-        bool() const noexcept
-          { return this->m_mtx != nullptr;  }
-
-        unique_lock&
-        lock(mutex& m) noexcept
-          {
-            if(this->m_mtx == &(m.m_mtx))
-              return *this;
-
-            m.m_mtx.lock();
-            this->do_unlock_if();
-            this->m_mtx = &(m.m_mtx);
-            return *this;
-          }
-
-        unique_lock&
-        unlock() noexcept
-          {
-            ROCKET_ASSERT(this->m_mtx != nullptr);
-            this->m_mtx->unlock();
-            this->m_mtx = nullptr;
             return *this;
           }
 
@@ -104,6 +65,37 @@ class mutex
           {
             ::std::swap(this->m_mtx, other.m_mtx);
             return *this;
+          }
+
+        ~unique_lock()
+          {
+            this->unlock();
+          }
+
+      public:
+        explicit constexpr operator
+        bool() const noexcept
+          { return this->m_mtx != nullptr;  }
+
+        void
+        lock(mutex& m) noexcept
+          {
+            if(this->m_mtx == &(m.m_mtx))
+              return;
+
+            m.m_mtx.lock();  // note lock first
+            this->unlock();
+            this->m_mtx = &(m.m_mtx);
+          }
+
+        void
+        unlock() noexcept
+          {
+            if(this->m_mtx == nullptr)
+              return;
+
+            this->m_mtx->unlock();
+            this->m_mtx = nullptr;
           }
       };
   };

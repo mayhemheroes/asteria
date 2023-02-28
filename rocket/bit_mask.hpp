@@ -48,13 +48,12 @@ class bit_mask
       }
 
     constexpr
-    bit_mask&
+    void
     set(size_t b, bool v = true) noexcept
       {
         ROCKET_ASSERT(b < bit_count);
         this->m_value &= ~(valueT(1) << b);
         this->m_value |= valueT(v) << b;
-        return *this;
       }
 
     constexpr
@@ -134,13 +133,17 @@ template<typename valueT>
 constexpr
 bool
 operator==(const bit_mask<valueT>& lhs, const bit_mask<valueT>& rhs) noexcept
-  { return lhs.value() == rhs.value();  }
+  {
+    return lhs.value() == rhs.value();
+  }
 
 template<typename valueT>
 constexpr
 bool
 operator!=(const bit_mask<valueT>& lhs, const bit_mask<valueT>& rhs) noexcept
-  { return lhs.value() != rhs.value();  }
+  {
+    return lhs.value() != rhs.value();
+  }
 
 }  // namespace rocket
 #endif

@@ -20,13 +20,11 @@ class Recursion_Sentry
   public:
     explicit constexpr
     Recursion_Sentry() noexcept
-      : m_base(this)
-      { }
+      : m_base(this)  { }
 
     explicit constexpr
     Recursion_Sentry(const void* base) noexcept
-      : m_base(base)
-      { }
+      : m_base(base)  { }
 
     Recursion_Sentry(const Recursion_Sentry& other)  // copy constructor
       : m_base(other.m_base)
@@ -57,7 +55,9 @@ class Recursion_Sentry
   public:
     // Make this class non-trivial.
     ~Recursion_Sentry()
-      { }
+      {
+        __asm__ ("");
+      }
 
     const void*
     get_base() const noexcept

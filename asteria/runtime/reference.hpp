@@ -36,8 +36,7 @@ class Reference
     // Constructors and assignment operators
     constexpr
     Reference() noexcept
-      : m_init_index()
-      { }
+      : m_init_index()  { }
 
     Reference(const Reference& other) noexcept
       : m_mods(other.m_mods),
@@ -331,7 +330,9 @@ class Reference
 inline
 void
 swap(Reference& lhs, Reference& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

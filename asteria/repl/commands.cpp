@@ -91,16 +91,17 @@ struct Handler_exit final
 
         // Parse the status code.
         Exit_Status stat = exit_non_integer;
+        const auto& s = args.at(0);
 
         ::rocket::ascii_numget numg;
-        uint8_t num;
-        const char* bptr = args[0].data();
-        const char* eptr = bptr + args[0].size();
-
-        if(numg.get(num, bptr, eptr) && (bptr == eptr))
-          stat = static_cast<Exit_Status>(num);
+        if(numg.parse_U(s.data(), s.size()) == s.size()) {
+          // Get exit status from the argument.
+          uint64_t temp;
+          numg.cast_U(temp, 0, UINT8_MAX);
+          stat = (Exit_Status) temp;
+        }
         else
-          repl_printf("! warning: invalid exit status: %s", args[0].c_str());
+          repl_printf("! warning: invalid exit status: %s", s.c_str());
 
         if(args.size() > 1)
           repl_printf("! warning: excess arguments ignored");

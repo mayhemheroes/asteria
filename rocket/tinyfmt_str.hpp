@@ -35,20 +35,17 @@ class basic_tinyfmt_str
 
   public:
     basic_tinyfmt_str() noexcept
-      : m_buf(tinybuf_base::open_write)
-      { }
+      : m_buf(tinybuf_base::open_write)  { }
 
     explicit
     basic_tinyfmt_str(open_mode mode) noexcept
-      : m_buf(mode)
-      { }
+      : m_buf(mode)  { }
 
     template<typename xstrT,
     ROCKET_ENABLE_IF(is_constructible<string_type, xstrT&&>::value)>
     explicit
     basic_tinyfmt_str(xstrT&& xstr, open_mode mode = tinybuf_base::open_write)
-      : m_buf(::std::forward<xstrT>(xstr), mode)
-      { }
+      : m_buf(::std::forward<xstrT>(xstr), mode)  { }
 
     basic_tinyfmt_str&
     swap(basic_tinyfmt_str& other) noexcept(is_nothrow_swappable<tinybuf_type>::value)
@@ -101,25 +98,24 @@ class basic_tinyfmt_str
 template<typename charT, typename traitsT, typename allocT>
 basic_tinyfmt_str<charT, traitsT, allocT>::
 ~basic_tinyfmt_str()
-  { }
+  {
+  }
 
 template<typename charT, typename traitsT, typename allocT>
 inline
 void
 swap(basic_tinyfmt_str<charT, traitsT, allocT>& lhs, basic_tinyfmt_str<charT, traitsT, allocT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
-extern
-template
-class basic_tinyfmt_str<char>;
+using tinyfmt_str     = basic_tinyfmt_str<char>;
+using wtinyfmt_str    = basic_tinyfmt_str<wchar_t>;
+using u16tinyfmt_str  = basic_tinyfmt_str<char16_t>;
+using u32tinyfmt_str  = basic_tinyfmt_str<char32_t>;
 
-extern
-template
-class basic_tinyfmt_str<wchar_t>;
-
-using tinyfmt_str   = basic_tinyfmt_str<char>;
-using wtinyfmt_str  = basic_tinyfmt_str<wchar_t>;
+extern template class basic_tinyfmt_str<char>;
 
 }  // namespace rocket
 #endif

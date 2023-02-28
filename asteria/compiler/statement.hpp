@@ -190,8 +190,7 @@ class Statement
     constexpr
     Statement(XStmtT&& xstmt)
        noexcept(::std::is_nothrow_constructible<decltype(m_stor), XStmtT&&>::value)
-      : m_stor(::std::forward<XStmtT>(xstmt))
-      { }
+      : m_stor(::std::forward<XStmtT>(xstmt))  { }
 
     template<typename XStmtT,
     ROCKET_ENABLE_IF(::std::is_assignable<decltype(m_stor)&, XStmtT&&>::value)>
@@ -233,7 +232,9 @@ class Statement
 inline
 void
 swap(Statement& lhs, Statement& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

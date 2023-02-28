@@ -330,12 +330,16 @@ enum Scope_Flags : uint32_t
 constexpr
 Scope_Flags
 operator&(Scope_Flags x, Scope_Flags y) noexcept
-  { return Scope_Flags(uint32_t(x) & uint32_t(y));  }
+  {
+    return Scope_Flags(uint32_t(x) & uint32_t(y));
+  }
 
 constexpr
 Scope_Flags
 operator|(Scope_Flags x, Scope_Flags y) noexcept
-  { return Scope_Flags(uint32_t(x) | uint32_t(y));  }
+  {
+    return Scope_Flags(uint32_t(x) | uint32_t(y));
+  }
 
 // Accept a statement; a blockt is converted to a single statement.
 opt<Statement>
@@ -2534,7 +2538,7 @@ Statement_Sequence::
   {
   }
 
-Statement_Sequence&
+void
 Statement_Sequence::
 reload(Token_Stream&& tstrm)
   {
@@ -2555,10 +2559,9 @@ reload(Token_Stream&& tstrm)
 
     // Succeed.
     this->m_stmts = ::std::move(stmts);
-    return *this;
   }
 
-Statement_Sequence&
+void
 Statement_Sequence::
 reload_oneline(Token_Stream&& tstrm)
   {
@@ -2587,7 +2590,6 @@ reload_oneline(Token_Stream&& tstrm)
 
     // Succeed.
     this->m_stmts = ::std::move(stmts);
-    return *this;
   }
 
 }  // namespace asteria

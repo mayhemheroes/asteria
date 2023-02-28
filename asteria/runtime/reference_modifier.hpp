@@ -60,8 +60,7 @@ class Reference_Modifier
     constexpr
     Reference_Modifier(XModT&& xmod)
       noexcept(::std::is_nothrow_constructible<decltype(m_stor), XModT&&>::value)
-      : m_stor(::std::forward<XModT>(xmod))
-      { }
+      : m_stor(::std::forward<XModT>(xmod))  { }
 
     template<typename XModT,
     ROCKET_ENABLE_IF(::std::is_assignable<decltype(m_stor)&, XModT&&>::value)>
@@ -130,7 +129,9 @@ class Reference_Modifier
 inline
 void
 swap(Reference_Modifier& lhs, Reference_Modifier& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

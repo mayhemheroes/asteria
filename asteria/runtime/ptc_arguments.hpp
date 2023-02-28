@@ -30,8 +30,7 @@ class PTC_Arguments final
     PTC_Arguments(const Source_Location& sloc, PTC_Aware ptc,
                   const cow_function& target, Reference_Stack&& stack)
       : m_sloc(sloc), m_ptc(ptc),
-        m_target(target), m_stack(::std::move(stack))
-      { }
+        m_target(target), m_stack(::std::move(stack))  { }
 
   public:
     ASTERIA_COPYABLE_DESTRUCTOR(PTC_Arguments);
@@ -59,17 +58,12 @@ class PTC_Arguments final
     ASTERIA_INCOMPLET(Variadic_Arguer)
     refcnt_ptr<const Variadic_Arguer>
     caller_opt() const noexcept
-      {
-        return unerase_pointer_cast<const Variadic_Arguer>(this->m_caller_opt);
-      }
+      { return unerase_pointer_cast<const Variadic_Arguer>(this->m_caller_opt);  }
 
     template<typename ArguerT>
-    PTC_Arguments&
+    void
     set_caller(const refcnt_ptr<ArguerT>& caller) noexcept
-      {
-        this->m_caller_opt = ::std::move(caller);
-        return *this;
-      }
+      { this->m_caller_opt = ::std::move(caller);  }
 
     const cow_bivector<Source_Location, AVMC_Queue>&
     defer() const noexcept

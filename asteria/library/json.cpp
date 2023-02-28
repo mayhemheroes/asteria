@@ -75,8 +75,7 @@ class Indenter_string final
   public:
     explicit
     Indenter_string(stringR add)
-      : m_add(add), m_cur(sref("\n"))
-      { }
+      : m_add(add), m_cur(sref("\n"))  { }
 
   public:
     tinyfmt&
@@ -106,8 +105,7 @@ class Indenter_spaces final
   public:
     explicit
     Indenter_spaces(int64_t add)
-      : m_add(::rocket::clamp_cast<size_t>(add, 0, 10)), m_cur(0)
-      { }
+      : m_add(::rocket::clamp_cast<size_t>(add, 0, 10)), m_cur(0)  { }
 
   public:
     tinyfmt&
@@ -343,7 +341,7 @@ do_format_nonrecursive(const Value& value, bool json5, Indenter& indent)
       auto& ctx = stack.mut_back();
       switch(ctx.index()) {
         case 0: {
-          auto& ctxa = ctx.as<0>();
+          auto& ctxa = ctx.mut<0>();
           if(++(ctxa.curp) != ctxa.refa->end()) {
             fmt << ',';
             indent.break_line(fmt);
@@ -364,7 +362,7 @@ do_format_nonrecursive(const Value& value, bool json5, Indenter& indent)
         }
 
         case 1: {
-          auto& ctxo = ctx.as<1>();
+          auto& ctxo = ctx.mut<1>();
           if(do_find_uncensored(++(ctxo.curp), *(ctxo.refo))) {
             fmt << ',';
             indent.break_line(fmt);
@@ -507,7 +505,7 @@ do_parse_nonrecursive(Token_Stream& tstrm)
               if(!kpunct) {
                 // Descend into the new object.
                 stack.emplace_back(S_xparse_object());
-                do_accept_object_key(stack.mut_back().as<1>(), tstrm);
+                do_accept_object_key(stack.mut_back().mut<1>(), tstrm);
                 continue;
               }
 
@@ -584,7 +582,7 @@ do_parse_nonrecursive(Token_Stream& tstrm)
           return value;
 
         if(stack.back().index() == 0) {
-          auto& ctxa = stack.mut_back().as<0>();
+          auto& ctxa = stack.mut_back().mut<0>();
           ctxa.arr.emplace_back(::std::move(value));
 
           // Look for the next element.
@@ -606,7 +604,7 @@ do_parse_nonrecursive(Token_Stream& tstrm)
           value = ::std::move(ctxa.arr);
         }
         else {
-          auto& ctxo = stack.mut_back().as<1>();
+          auto& ctxo = stack.mut_back().mut<1>();
           auto pair = ctxo.obj.try_emplace(::std::move(ctxo.key), ::std::move(value));
           if(!pair.second)
             throw Compiler_Error(Compiler_Error::M_status(),
@@ -663,39 +661,21 @@ do_parse(tinybuf& cbuf)
 }  // namespace
 
 V_string
-std_json_format(Value value, optV_string indent)
+std_json_format(Value value, optV_string indent, optV_boolean json5)
   {
     // No line break is inserted if `indent` is null or empty.
     return (!indent || indent->empty())
-               ? do_format_nonrecursive(value, false, Indenter_none())
-               : do_format_nonrecursive(value, false, Indenter_string(*indent));
+        ? do_format_nonrecursive(value, json5 == true, Indenter_none())
+        : do_format_nonrecursive(value, json5 == true, Indenter_string(*indent));
   }
 
 V_string
-std_json_format(Value value, V_integer indent)
+std_json_format(Value value, V_integer indent, optV_boolean json5)
   {
     // No line break is inserted if `indent` is non-positive.
     return (indent <= 0)
-               ? do_format_nonrecursive(value, false, Indenter_none())
-               : do_format_nonrecursive(value, false, Indenter_spaces(indent));
-  }
-
-V_string
-std_json_format5(Value value, optV_string indent)
-  {
-    // No line break is inserted if `indent` is null or empty.
-    return (!indent || indent->empty())
-               ? do_format_nonrecursive(value, true, Indenter_none())
-               : do_format_nonrecursive(value, true, Indenter_string(*indent));
-  }
-
-V_string
-std_json_format5(Value value, V_integer indent)
-  {
-    // No line break is inserted if `indent` is non-positive.
-    return (indent <= 0)
-               ? do_format_nonrecursive(value, true, Indenter_none())
-               : do_format_nonrecursive(value, true, Indenter_spaces(indent));
+        ? do_format_nonrecursive(value, json5 == true, Indenter_none())
+        : do_format_nonrecursive(value, json5 == true, Indenter_spaces(indent));
   }
 
 Value
@@ -734,40 +714,21 @@ create_bindings_json(V_object& result, API_Version /*version*/)
         Value value;
         optV_string sind;
         V_integer iind;
+        optV_boolean json5;
 
         reader.start_overload();
         reader.optional(value);
         reader.save_state(0);
         reader.optional(sind);
+        reader.optional(json5);
         if(reader.end_overload())
-          return (Value) std_json_format(value, sind);
+          return (Value) std_json_format(value, sind, json5);
 
         reader.load_state(0);
         reader.required(iind);
-          return (Value) std_json_format(value, iind);
-
-        reader.throw_no_matching_function_call();
-      });
-
-    result.insert_or_assign(sref("format5"),
-      ASTERIA_BINDING(
-        "std.json.format5", "[value], [indent]",
-        Argument_Reader&& reader)
-      {
-        Value value;
-        optV_string sind;
-        V_integer iind;
-
-        reader.start_overload();
-        reader.optional(value);
-        reader.save_state(0);
-        reader.optional(sind);
+        reader.optional(json5);
         if(reader.end_overload())
-          return (Value) std_json_format5(value, sind);
-
-        reader.load_state(0);
-        reader.required(iind);
-          return (Value) std_json_format5(value, iind);
+          return (Value) std_json_format(value, iind, json5);
 
         reader.throw_no_matching_function_call();
       });

@@ -40,18 +40,15 @@ class basic_tinybuf_file
   public:
     basic_tinybuf_file()
       noexcept(is_nothrow_constructible<unique_posix_file, nullptr_t, nullptr_t>::value)
-      : m_file(nullptr, nullptr)
-      { }
+      : m_file(nullptr, nullptr)  { }
 
     explicit
     basic_tinybuf_file(unique_posix_file&& file) noexcept
-      : m_file(::std::move(file))
-      { }
+      : m_file(::std::move(file))  { }
 
     explicit
     basic_tinybuf_file(handle_type fp, closer_type cl) noexcept
-      : m_file(fp, cl)
-      { }
+      : m_file(fp, cl)  { }
 
     explicit
     basic_tinybuf_file(const char* path, open_mode mode)
@@ -274,25 +271,24 @@ class basic_tinybuf_file
 template<typename charT, typename traitsT>
 basic_tinybuf_file<charT, traitsT>::
 ~basic_tinybuf_file()
-  { }
+  {
+  }
 
 template<typename charT, typename traitsT>
 inline
 void
 swap(basic_tinybuf_file<charT, traitsT>& lhs, basic_tinybuf_file<charT, traitsT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
-extern
-template
-class basic_tinybuf_file<char>;
+using tinybuf_file     = basic_tinybuf_file<char>;
+using wtinybuf_file    = basic_tinybuf_file<wchar_t>;
+using u16tinybuf_file  = basic_tinybuf_file<char16_t>;
+using u32tinybuf_file  = basic_tinybuf_file<char32_t>;
 
-extern
-template
-class basic_tinybuf_file<wchar_t>;
-
-using tinybuf_file   = basic_tinybuf_file<char>;
-using wtinybuf_file  = basic_tinybuf_file<wchar_t>;
+extern template class basic_tinybuf_file<char>;
 
 }  // namespace rocket
 #endif

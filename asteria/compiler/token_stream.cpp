@@ -27,8 +27,7 @@ class Text_Reader
   public:
     explicit
     Text_Reader(tinybuf& xcbuf, stringR xfile, int xline)
-      : m_cbuf(xcbuf), m_file(xfile), m_line(xline)
-      { }
+      : m_cbuf(xcbuf), m_file(xfile), m_line(xline)  { }
 
   public:
     const cow_string&
@@ -317,24 +316,17 @@ do_accept_numeric_literal(cow_vector<Token>& tokens, Text_Reader& reader,
     // Convert the token to a literal.
     // We always parse the literal as a floating-point number.
     ::rocket::ascii_numget numg;
-    const char* bp = tstr.c_str();
-    const char* ep = bp + tstr.size();
-    if(!numg.parse_F(bp, ep))
-      throw Compiler_Error(Compiler_Error::M_status(),
-                compiler_status_numeric_literal_invalid, reader.tell());
-
-    if(bp != ep)
+    if(numg.parse_D(tstr.data(), tstr.size()) != tstr.size())
       throw Compiler_Error(Compiler_Error::M_status(),
                 compiler_status_numeric_literal_suffix_invalid, reader.tell());
 
-    // It is cast to an integer only when `integers_as_reals` is `false` and it does not
-    // contain a radix point.
+    // It is cast to an integer only when `integers_as_reals` is `false` and
+    // it does not contain a radix point.
     if(!integers_as_reals && !has_point) {
-      // Try casting the value to an `integer`.
+      // Try casting the value to an `integer`. Integers never underflow.
       Token::S_integer_literal xtoken;
       numg.cast_I(xtoken.val, INT64_MIN, INT64_MAX);
 
-      // Check for errors. Note that integer casts never underflows.
       if(numg.overflowed())
         throw Compiler_Error(Compiler_Error::M_status(),
                   compiler_status_integer_literal_overflow, reader.tell());
@@ -343,19 +335,14 @@ do_accept_numeric_literal(cow_vector<Token>& tokens, Text_Reader& reader,
         throw Compiler_Error(Compiler_Error::M_status(),
                   compiler_status_integer_literal_inexact, reader.tell());
 
-      if(!numg)
-        throw Compiler_Error(Compiler_Error::M_status(),
-                  compiler_status_numeric_literal_invalid, reader.tell());
-
       // Accept the integral value.
       return do_push_token(tokens, reader, tlen, ::std::move(xtoken));
     }
     else {
-      // Try casting the value to a `real`.
+      // Try casting the value to a `real`. Real numbers are never exact.
       Token::S_real_literal xtoken;
-      numg.cast_F(xtoken.val, -DBL_MAX, DBL_MAX);
+      numg.cast_D(xtoken.val, -DBL_MAX, DBL_MAX);
 
-      // Check for errors. Note that integer casts are never inexact.
       if(numg.overflowed())
         throw Compiler_Error(Compiler_Error::M_status(),
                   compiler_status_real_literal_overflow, reader.tell());
@@ -363,10 +350,6 @@ do_accept_numeric_literal(cow_vector<Token>& tokens, Text_Reader& reader,
       if(numg.underflowed())
         throw Compiler_Error(Compiler_Error::M_status(),
                   compiler_status_real_literal_underflow, reader.tell());
-
-      if(!numg)
-        throw Compiler_Error(Compiler_Error::M_status(),
-                  compiler_status_numeric_literal_invalid, reader.tell());
 
       // Accept the real value.
       return do_push_token(tokens, reader, tlen, ::std::move(xtoken));
@@ -760,7 +743,7 @@ Token_Stream::
   {
   }
 
-Token_Stream&
+void
 Token_Stream::
 reload(stringR file, int start_line, tinybuf&& cbuf)
   {
@@ -874,7 +857,6 @@ reload(stringR file, int start_line, tinybuf&& cbuf)
     // Reverse the token sequence and accept it.
     ::std::reverse(tokens.mut_begin(), tokens.mut_end());
     this->m_rtoks = ::std::move(tokens);
-    return *this;
   }
 
 }  // namespace asteria

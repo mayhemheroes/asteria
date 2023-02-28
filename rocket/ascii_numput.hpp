@@ -10,210 +10,187 @@ namespace rocket {
 class ascii_numput
   {
   private:
-    // These pointers may point to static, immutable storage.
-    const char* m_bptr;
-    const char* m_eptr;
+    // Configuration
+    char m_rdxp = '.';
 
-    // This storage must be sufficient for the longest result, which at the moment
-    // is signed 64-bit integer in binary (`"-0b111...1"` takes 68 bytes along with
-    // the null terminator).
-    // The size is a multiple of eight to prevent padding bytes.
-    static constexpr size_t M = 71;
-    char m_stor[M+1];
+    // This storage must be sufficient for the longest result, which
+    // at the moment is signed 64-bit integer in binary (`-0b111...1`
+    // takes 68 bytes along with the null terminator).
+    char m_stor[71];
+
+    // These pointers may point to static, immutable storage.
+    const char* m_data = "";
+    uint32_t m_size = 0;
 
   public:
-    ascii_numput() noexcept
-      { this->clear();  }
+    // Initializes an empty string.
+    ascii_numput() noexcept = default;
 
-    template<typename valueT,
-    ROCKET_ENABLE_IF(is_scalar<valueT>::value)>
-    explicit
-    ascii_numput(const valueT& value) noexcept
-      { this->put(value);  }
+    ascii_numput(const ascii_numput&) = delete;
+
+    ascii_numput&
+    operator=(const ascii_numput&) = delete;
 
   public:
     // accessors
     const char*
     begin() const noexcept
-      { return this->m_bptr;  }
+      { return this->m_data;  }
 
     const char*
     end() const noexcept
-      { return this->m_eptr;  }
+      { return this->m_data + this->m_size;  }
 
     bool
     empty() const noexcept
-      { return this->m_bptr == this->m_eptr;  }
+      { return this->m_size == 0;  }
 
     size_t
     size() const noexcept
-      { return static_cast<size_t>(this->m_eptr - this->m_bptr);  }
+      { return this->m_size;  }
 
     const char*
     data() const noexcept
-      { return this->m_bptr;  }
+      { return this->m_data;  }
 
-    ascii_numput&
+    void
     clear() noexcept
       {
-        this->m_bptr = this->m_stor;
-        this->m_eptr = this->m_stor;
+        this->m_data = this->m_stor;
+        this->m_size = 0;
         this->m_stor[0] = 0;
-        return *this;
       }
 
-    // * boolean
-    ascii_numput&
+    // Gets and sets the radix point.
+    char
+    radix_point() const noexcept
+      { return this->m_rdxp;  }
+
+    void
+    set_radix_point(char rdxp) noexcept
+      { this->m_rdxp = rdxp;  }
+
+    // * boolean as `true` or `false`
+    void
     put_TB(bool value) noexcept;
 
-    // * pointer
-    ascii_numput&
-    put_XP(const void* value) noexcept;
+    // * pointer as an unsigned integer in hexadecimal
+    void
+    put_XP(const volatile void* value) noexcept;
 
     // * unsigned 64-bit integer in binary
-    ascii_numput&
-    put_BU(uint64_t value, size_t precision = 1) noexcept;
+    void
+    put_BU(uint64_t value, uint32_t precision = 1) noexcept;
 
     // * unsigned 64-bit integer in hexadecimal
-    ascii_numput&
-    put_XU(uint64_t value, size_t precision = 1) noexcept;
+    void
+    put_XU(uint64_t value, uint32_t precision = 1) noexcept;
 
     // * unsigned 64-bit integer in decimal
-    ascii_numput&
-    put_DU(uint64_t value, size_t precision = 1) noexcept;
+    void
+    put_DU(uint64_t value, uint32_t precision = 1) noexcept;
 
     // * signed 64-bit integer in binary
-    ascii_numput&
-    put_BI(int64_t value, size_t precision = 1) noexcept;
+    void
+    put_BI(int64_t value, uint32_t precision = 1) noexcept;
 
     // * signed 64-bit integer in hexadecimal
-    ascii_numput&
-    put_XI(int64_t value, size_t precision = 1) noexcept;
+    void
+    put_XI(int64_t value, uint32_t precision = 1) noexcept;
 
     // * signed 64-bit integer in decimal
-    ascii_numput&
-    put_DI(int64_t value, size_t precision = 1) noexcept;
+    void
+    put_DI(int64_t value, uint32_t precision = 1) noexcept;
 
-    // * IEEE-754 double-precision floating-point in binary
-    ascii_numput&
-    put_BF(double value, bool single = false) noexcept;
+    // * IEEE-754 single-precision floating-point in binary
+    void
+    put_BF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in binary scientific notation
+    void
+    put_BEF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in hexadecimal
+    void
+    put_XF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in hexadecimal scientific notation
+    void
+    put_XEF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in decimal
+    void
+    put_DF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in decimal scientific notation
+    void
+    put_DEF(float value) noexcept;
+
+    // * IEEE-754 single-precision floating-point in binary
+    void
+    put_BD(double value) noexcept;
 
     // * IEEE-754 double-precision floating-point in binary scientific notation
-    ascii_numput&
-    put_BE(double value, bool single = false) noexcept;
+    void
+    put_BED(double value) noexcept;
 
     // * IEEE-754 double-precision floating-point in hexadecimal
-    ascii_numput&
-    put_XF(double value, bool single = false) noexcept;
+    void
+    put_XD(double value) noexcept;
 
     // * IEEE-754 double-precision floating-point in hexadecimal scientific notation
-    ascii_numput&
-    put_XE(double value, bool single = false) noexcept;
+    void
+    put_XED(double value) noexcept;
 
     // * IEEE-754 double-precision floating-point in decimal
-    ascii_numput&
-    put_DF(double value, bool single = false) noexcept;
+    void
+    put_DD(double value) noexcept;
 
     // * IEEE-754 double-precision floating-point in decimal scientific notation
-    ascii_numput&
-    put_DE(double value, bool single = false) noexcept;
+    void
+    put_DED(double value) noexcept;
 
-    ascii_numput&
+    // These are easy functions that delegate to those above, passing
+    // their default arguments. These functions are designed to produce
+    // lossless outputs.
+    void
     put(bool value) noexcept
       {
         this->put_TB(value);
-        return *this;
       }
 
-    ascii_numput&
-    put(const void* value) noexcept
+    void
+    put(const volatile void* value) noexcept
       {
         this->put_XP(value);
-        return *this;
       }
 
-    ascii_numput&
-    put(unsigned char value) noexcept
+    template<typename valueT,
+    ROCKET_ENABLE_IF(is_integral<valueT>::value && is_unsigned<valueT>::value)>
+    void
+    put(valueT value) noexcept
       {
         this->put_DU(value);
-        return *this;
       }
 
-    ascii_numput&
-    put(unsigned short value) noexcept
-      {
-        this->put_DU(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(unsigned value) noexcept
-      {
-        this->put_DU(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(unsigned long value) noexcept
-      {
-        this->put_DU(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(unsigned long long value) noexcept
-      {
-        this->put_DU(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(signed char value) noexcept
+    template<typename valueT,
+    ROCKET_ENABLE_IF(is_integral<valueT>::value && is_signed<valueT>::value)>
+    void
+    put(valueT value) noexcept
       {
         this->put_DI(value);
-        return *this;
       }
 
-    ascii_numput&
-    put(signed short value) noexcept
-      {
-        this->put_DI(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(signed value) noexcept
-      {
-        this->put_DI(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(signed long value) noexcept
-      {
-        this->put_DI(value);
-        return *this;
-      }
-
-    ascii_numput&
-    put(signed long long value) noexcept
-      {
-        this->put_DI(value);
-        return *this;
-      }
-
-    ascii_numput&
+    void
     put(float value) noexcept
       {
-        this->put_DF(static_cast<double>(value), true);
-        return *this;
+        this->put_DF(value);
       }
 
-    ascii_numput&
+    void
     put(double value) noexcept
       {
-        this->put_DF(value);
-        return *this;
+        this->put_DD(value);
       }
   };
 
