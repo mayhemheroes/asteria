@@ -1,5 +1,0 @@
-project: asteria
-target: asteria
-
-cmds:
-  - cmd: /install/bin/asteria @@
