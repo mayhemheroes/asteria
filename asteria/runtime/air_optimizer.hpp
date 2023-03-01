@@ -6,7 +6,6 @@
 
 #include "../fwd.hpp"
 #include "air_node.hpp"
-
 namespace asteria {
 
 class AIR_Optimizer
@@ -19,8 +18,7 @@ class AIR_Optimizer
   public:
     explicit constexpr
     AIR_Optimizer(const Compiler_Options& opts) noexcept
-      : m_opts(opts)
-      { }
+      : m_opts(opts)  { }
 
   public:
     ASTERIA_COPYABLE_DESTRUCTOR(AIR_Optimizer);
@@ -34,12 +32,9 @@ class AIR_Optimizer
     mut_options() noexcept
       { return this->m_opts;  }
 
-    AIR_Optimizer&
+    void
     set_options(const Compiler_Options& opts) noexcept
-      {
-        this->m_opts = opts;
-        return *this;
-      }
+      { this->m_opts = opts;  }
 
     // These are accessors and modifiers of tokens in this stream.
     bool
@@ -50,28 +45,25 @@ class AIR_Optimizer
     get_code() const noexcept
       { return this->m_code;  }
 
-    AIR_Optimizer&
+    void
     clear() noexcept
-      {
-        this->m_code.clear();
-        return *this;
-      }
+      { this->m_code.clear();  }
 
     // This function performs code generation.
     // `ctx_opt` is the parent context of this closure.
-    AIR_Optimizer&
+    void
     reload(Abstract_Context* ctx_opt, const cow_vector<phsh_string>& params,
            const Global_Context& global, const cow_vector<Statement>& stmts);
 
     // This function loads some already-generated code.
     // `ctx_opt` is the parent context of this closure.
-    AIR_Optimizer&
+    void
     rebind(Abstract_Context* ctx_opt, const cow_vector<phsh_string>& params,
            const cow_vector<AIR_Node>& code);
 
     // Create a closure value that can be assigned to a variable.
     cow_function
-    create_function(const Source_Location& sloc, const cow_string& name);
+    create_function(const Source_Location& sloc, stringR name);
   };
 
 }  // namespace asteria

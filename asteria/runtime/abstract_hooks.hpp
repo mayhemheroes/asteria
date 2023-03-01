@@ -5,7 +5,6 @@
 #define ASTERIA_RUNTIME_ABSTRACT_HOOKS_
 
 #include "../fwd.hpp"
-
 namespace asteria {
 
 struct Abstract_Hooks
@@ -20,7 +19,7 @@ struct Abstract_Hooks
     // and before its initializer is evaluated.
     virtual
     void
-    on_variable_declare(const Source_Location& sloc, const phsh_string& name)
+    on_variable_declare(const Source_Location& sloc, phsh_stringR name)
       {
         (void)sloc;
         (void)name;

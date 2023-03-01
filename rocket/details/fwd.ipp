@@ -4,7 +4,6 @@
 #ifndef ROCKET_FWD_
 #  error Please include <rocket/fwd.hpp> instead.
 #endif
-
 namespace details_fwd {
 
 // `is_input_iterator`
@@ -25,7 +24,9 @@ template<typename iteratorT>
 constexpr
 size_t
 estimate_distance_aux(::std::input_iterator_tag, iteratorT /*first*/, iteratorT /*last*/)
-  { return 0;  }
+  {
+    return 0;
+  }
 
 template<typename iteratorT>
 constexpr  // c++14
@@ -175,13 +176,17 @@ template<typename targetT, typename sourceT>
 constexpr
 targetT
 static_or_dynamic_cast_aux(true_type, sourceT&& src)
-  { return static_cast<targetT>(::std::forward<sourceT>(src));  }
+  {
+    return static_cast<targetT>(::std::forward<sourceT>(src));
+  }
 
 template<typename targetT, typename sourceT>
 constexpr
 targetT
 static_or_dynamic_cast_aux(false_type, sourceT&& src)
-  { return dynamic_cast<targetT>(::std::forward<sourceT>(src));  }
+  {
+    return dynamic_cast<targetT>(::std::forward<sourceT>(src));
+  }
 
 template<typename valueT>
 struct binder_eq
@@ -190,13 +195,11 @@ struct binder_eq
 
     constexpr
     binder_eq(const valueT& xval) noexcept(is_nothrow_copy_constructible<valueT>::value)
-      : m_val(xval)
-      { }
+      : m_val(xval)  { }
 
     constexpr
     binder_eq(valueT&& xval) noexcept(is_nothrow_move_constructible<valueT>::value)
-      : m_val(::std::move(xval))
-      { }
+      : m_val(::std::move(xval))  { }
 
     template<typename xvalueT>
     constexpr
@@ -212,13 +215,11 @@ struct binder_ne
 
     constexpr
     binder_ne(const valueT& xval) noexcept(is_nothrow_copy_constructible<valueT>::value)
-      : m_val(xval)
-      { }
+      : m_val(xval)  { }
 
     constexpr
     binder_ne(valueT&& xval) noexcept(is_nothrow_move_constructible<valueT>::value)
-      : m_val(::std::move(xval))
-      { }
+      : m_val(::std::move(xval))  { }
 
     template<typename xvalueT>
     constexpr

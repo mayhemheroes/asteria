@@ -8,7 +8,6 @@
 #include "assert.hpp"
 #include "throw.hpp"
 #include <cstring>  // std::memset()
-
 namespace rocket {
 
 template<typename... altsT>
@@ -74,8 +73,7 @@ class variant
     // 23.7.3.1, constructors
     constexpr
     variant() noexcept(is_nothrow_constructible<typename alternative_at<0>::type>::value)
-      : m_init_stor(), m_init_index()
-      { }
+      : m_init_stor(), m_init_index()  { }
 
     template<typename paramT,
     ROCKET_ENABLE_IF_HAS_VALUE(index_of<typename decay<paramT>::type>::value)>
@@ -344,7 +342,7 @@ class variant
     // accessors
     template<size_t indexT>
     const typename alternative_at<indexT>::type*
-    get() const noexcept
+    ptr() const noexcept
       {
         if(this->m_index != indexT)
           return nullptr;
@@ -354,14 +352,14 @@ class variant
     template<typename targetT,
     ROCKET_ENABLE_IF_HAS_VALUE(index_of<targetT>::value)>
     const targetT*
-    get() const noexcept
+    ptr() const noexcept
       {
-        return this->get<index_of<targetT>::value>();
+        return this->ptr<index_of<targetT>::value>();
       }
 
     template<size_t indexT>
     typename alternative_at<indexT>::type*
-    get() noexcept
+    mut_ptr() noexcept
       {
         if(this->m_index != indexT)
           return nullptr;
@@ -371,16 +369,16 @@ class variant
     template<typename targetT,
     ROCKET_ENABLE_IF_HAS_VALUE(index_of<targetT>::value)>
     targetT*
-    get() noexcept
+    mut_ptr() noexcept
       {
-        return this->get<index_of<targetT>::value>();
+        return this->mut_ptr<index_of<targetT>::value>();
       }
 
     template<size_t indexT>
     const typename alternative_at<indexT>::type&
     as() const
       {
-        auto ptr = this->get<indexT>();
+        auto ptr = this->ptr<indexT>();
         if(!ptr)
           this->do_throw_index_mismatch(indexT,
                        typeid(typename alternative_at<indexT>::type));
@@ -397,9 +395,9 @@ class variant
 
     template<size_t indexT>
     typename alternative_at<indexT>::type&
-    as()
+    mut()
       {
-        auto ptr = this->get<indexT>();
+        auto ptr = this->mut_ptr<indexT>();
         if(!ptr)
           this->do_throw_index_mismatch(indexT,
                        typeid(typename alternative_at<indexT>::type));
@@ -409,9 +407,9 @@ class variant
     template<typename targetT,
     ROCKET_ENABLE_IF_HAS_VALUE(index_of<targetT>::value)>
     targetT&
-    as()
+    mut()
       {
-        return this->as<index_of<targetT>::value>();
+        return this->mut<index_of<targetT>::value>();
       }
 
     template<typename visitorT>
@@ -427,7 +425,7 @@ class variant
 
     template<typename visitorT>
     void
-    visit(visitorT&& visitor)
+    mut_visit(visitorT&& visitor)
       {
         static constexpr auto nt_funcs =
              details_variant::const_func_table<void (void*, visitorT&&),
@@ -497,8 +495,9 @@ inline
 void
 swap(variant<altsT...>& lhs, variant<altsT...>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace rocket
-
 #endif

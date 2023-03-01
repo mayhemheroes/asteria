@@ -4,7 +4,6 @@
 #ifndef ASTERIA_RUNTIME_ARGUMENT_READER_
 #  error Please include <asteria/runtime/argument_reader.hpp> instead.
 #endif
-
 namespace asteria {
 namespace details_argument_reader {
 
@@ -38,8 +37,7 @@ class Thunk_Base
   public:
     explicit
     Thunk_Base(const Factory& fact, FunctionT func)
-      : m_name(fact.name), m_desc(fact.desc), m_func(func)
-      { }
+      : m_name(fact.name), m_desc(fact.desc), m_func(func)  { }
 
   public:
     tinyfmt&

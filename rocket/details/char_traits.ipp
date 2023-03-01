@@ -4,7 +4,6 @@
 #ifndef ROCKET_CHAR_TRAITS_
 #  error Please include <rocket/char_traits.hpp> instead.
 #endif
-
 namespace details_char_traits {
 
 template<typename charT>
@@ -42,7 +41,9 @@ template<typename charT>
 constexpr
 typename make_unsigned<charT>::type
 ucast(charT c) noexcept
-  { return static_cast<typename make_unsigned<charT>::type>(c);  }
+  {
+    return static_cast<typename make_unsigned<charT>::type>(c);
+  }
 
 template<typename charT>
 constexpr

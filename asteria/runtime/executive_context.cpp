@@ -11,7 +11,6 @@
 #include "../llds/avmc_queue.hpp"
 #include "../llds/reference_stack.hpp"
 #include "../utils.hpp"
-
 namespace asteria {
 
 ROCKET_FLATTEN
@@ -82,7 +81,7 @@ Executive_Context::
 
 Reference*
 Executive_Context::
-do_create_lazy_reference_opt(Reference* hint_opt, const phsh_string& name) const
+do_create_lazy_reference_opt(Reference* hint_opt, phsh_stringR name) const
   {
     // Create pre-defined references as needed.
     // N.B. If you have ever changed these, remember to update
@@ -121,12 +120,11 @@ do_create_lazy_reference_opt(Reference* hint_opt, const phsh_string& name) const
     return nullptr;
   }
 
-Executive_Context&
+void
 Executive_Context::
 defer_expression(const Source_Location& sloc, AVMC_Queue&& queue)
   {
     this->m_defer.emplace_back(sloc, ::std::move(queue));
-    return *this;
   }
 
 AIR_Status

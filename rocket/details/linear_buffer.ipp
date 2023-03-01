@@ -4,7 +4,6 @@
 #ifndef ROCKET_LINEAR_BUFFER_
 #  error Please include <rocket/linear_buffer.hpp> instead.
 #endif
-
 namespace details_linear_buffer {
 
 template<typename allocT, typename traitsT>
@@ -28,13 +27,11 @@ class basic_storage
   public:
     explicit constexpr
     basic_storage(const allocator_type& alloc) noexcept
-      : allocator_base(alloc)
-      { }
+      : allocator_base(alloc)  { }
 
     explicit constexpr
     basic_storage(allocator_type&& alloc) noexcept
-      : allocator_base(::std::move(alloc))
-      { }
+      : allocator_base(::std::move(alloc))  { }
 
     ~basic_storage()
       { this->deallocate();  }

@@ -3,7 +3,6 @@
 
 #include "utils.hpp"
 #include "../asteria/simple_script.hpp"
-
 using namespace ::asteria;
 
 int main()
@@ -13,37 +12,37 @@ int main()
       sref(__FILE__), __LINE__, sref(R"__(
 ///////////////////////////////////////////////////////////////////////////////
 
-        assert std.chrono.format(std.numeric.integer_min) == "1601-01-01 00:00:00";
-        assert std.chrono.format(std.numeric.integer_min, true) == "1601-01-01 00:00:00.000";
-        assert std.chrono.format(std.numeric.integer_max) == "9999-01-01 00:00:00";
-        assert std.chrono.format(std.numeric.integer_max, true) == "9999-01-01 00:00:00.000";
+        assert std.chrono.format(std.numeric.integer_min) == "0000-01-01 00:00:00 UTC";  // min
+        assert std.chrono.format(std.numeric.integer_min, true) == "0000-01-01 00:00:00.000 UTC";  // min
 
-        var s = "1934-05-06 07:08:09.234";
-        var t = std.chrono.utc_parse(s);
-        assert t;
-        assert std.chrono.format(t, true) == s;
+        assert std.chrono.format(std.numeric.integer_max) == "9999-01-01 00:00:00 UTC";  // max
+        assert std.chrono.format(std.numeric.integer_max, true) == "9999-01-01 00:00:00.000 UTC";  // max
 
-        s = "2132-02-29 23:40:50.987";
-        t = std.chrono.utc_parse(s);
-        assert t;
-        assert std.chrono.format(t, true) == s;
+        assert std.chrono.format(0, false, 0) == "1970-01-01 00:00:00 UTC";
+        assert std.chrono.format(0, true, 0) == "1970-01-01 00:00:00.000 UTC";
 
-        s = "1000-01-01 01:02:03";
-        t = std.chrono.utc_parse(s);
-        assert t == std.numeric.integer_min;
+        assert std.chrono.parse("0000-01-01 00:00:00 UTC") == std.numeric.integer_min;
+        assert std.chrono.parse("9999-01-01 00:00:00 UTC") == std.numeric.integer_max;
 
-        s = "9999-01-01 01:02:03";
-        t = std.chrono.utc_parse(s);
-        assert t == std.numeric.integer_max;
+        var now = std.chrono.now();
+        assert now > 0;
+        std.io.putfln("now ---> $1", now);
 
-        s = "invalid";
-        assert catch( std.chrono.utc_parse(s) ) != null;
+        var now_str_utc = std.chrono.format(now, true, 0);
+        std.io.putfln("now_str_utc ---> $1", now_str_utc);
+        assert std.chrono.parse(now_str_utc) == now;
 
-        t = 631152000000;  // 1990-01-01 00:00:00 GMT
+        var now_str_local = std.chrono.format(now, true);
+        std.io.putfln("now_str_local ---> $1", now_str_local);
+        assert std.chrono.parse(now_str_local) == now;
+
+        var utc_off = std.chrono.parse(now_str_utc >> 4) - now;  // remove " UTC"
+        std.io.putfln("utc_off ---> $1", utc_off);
+
+        var t = 631152000000;  // 1990-01-01 00:00:00 UTC
         for(var i = 0;  i < 365 * 500;  ++i) {
           t += 86345`678;
-          s = std.chrono.format(t, true);
-          assert std.chrono.utc_parse(s) == t;
+          assert std.chrono.parse(std.chrono.format(t, true)) == t;
         }
 
 ///////////////////////////////////////////////////////////////////////////////

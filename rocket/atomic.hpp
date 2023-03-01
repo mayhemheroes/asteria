@@ -6,7 +6,6 @@
 
 #include "assert.hpp"
 #include <atomic>  // std::atomic<>
-
 namespace rocket {
 
 template<typename valueT, memory_order memorderT = memory_order_acq_rel>
@@ -24,18 +23,17 @@ class atomic
     using value_type  = valueT;
 
   private:
-    ::std::atomic<value_type> m_val;
+    ::std::atomic<value_type> m_val = { value_type() };
 
   public:
-    constexpr
-    atomic(value_type val = { }) noexcept
-      : m_val(val)
-      { }
+    atomic() noexcept = default;
+
+    explicit
+    atomic(value_type val) noexcept
+      : m_val(val)  { }
 
     atomic(const atomic&) = delete;
-
-    atomic&
-    operator=(const atomic&) = delete;
+    atomic& operator=(const atomic&) = delete;
 
   private:
     static constexpr
@@ -154,5 +152,4 @@ template<typename valueT>
 using atomic_seq_cst = atomic<valueT, memory_order_seq_cst>;
 
 }  // namespace rocket
-
 #endif

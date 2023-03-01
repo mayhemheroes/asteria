@@ -9,7 +9,6 @@
 #include "throw.hpp"
 #include "reference_counter.hpp"
 #include "xallocator.hpp"
-
 namespace rocket {
 
 template<typename elementT,
@@ -115,35 +114,29 @@ class refcnt_ptr
   public:
     constexpr
     refcnt_ptr(nullptr_t = nullptr) noexcept
-      : m_sth()
-      { }
+      : m_sth()  { }
 
     explicit constexpr
     refcnt_ptr(pointer ptr) noexcept
-      : m_sth(ptr)
-      { }
+      : m_sth(ptr)  { }
 
     template<typename yelementT,
     ROCKET_ENABLE_IF(is_convertible<typename refcnt_ptr<yelementT>::pointer,
                                     pointer>::value)>
     refcnt_ptr(const refcnt_ptr<yelementT>& other) noexcept
-      : m_sth(other.m_sth.fork())
-      { }
+      : m_sth(other.m_sth.fork())  { }
 
     template<typename yelementT,
     ROCKET_ENABLE_IF(is_convertible<typename refcnt_ptr<yelementT>::pointer,
                                     pointer>::value)>
     refcnt_ptr(refcnt_ptr<yelementT>&& other) noexcept
-      : m_sth(other.m_sth.release())
-      { }
+      : m_sth(other.m_sth.release())  { }
 
     refcnt_ptr(const refcnt_ptr& other) noexcept
-      : m_sth(other.m_sth.fork())
-      { }
+      : m_sth(other.m_sth.fork())  { }
 
     refcnt_ptr(refcnt_ptr&& other) noexcept
-      : m_sth(other.m_sth.release())
-      { }
+      : m_sth(other.m_sth.release())  { }
 
     refcnt_ptr&
     operator=(nullptr_t) & noexcept
@@ -249,73 +242,97 @@ template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator==(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs) noexcept
-  { return lhs.get() == rhs.get();  }
+  {
+    return lhs.get() == rhs.get();
+  }
 
 template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator!=(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs) noexcept
-  { return lhs.get() != rhs.get();  }
+  {
+    return lhs.get() != rhs.get();
+  }
 
 template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator<(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs)
-  { return lhs.get() < rhs.get();  }
+  {
+    return lhs.get() < rhs.get();
+  }
 
 template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator>(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs)
-  { return lhs.get() > rhs.get();  }
+  {
+    return lhs.get() > rhs.get();
+  }
 
 template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator<=(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs)
-  { return lhs.get() <= rhs.get();  }
+  {
+    return lhs.get() <= rhs.get();
+  }
 
 template<typename xelementT, typename yelementT>
 constexpr
 bool
 operator>=(const refcnt_ptr<xelementT>& lhs, const refcnt_ptr<yelementT>& rhs)
-  { return lhs.get() >= rhs.get();  }
+  {
+    return lhs.get() >= rhs.get();
+  }
 
 template<typename elementT>
 constexpr
 bool
 operator==(const refcnt_ptr<elementT>& lhs, nullptr_t) noexcept
-  { return !lhs;  }
+  {
+    return !lhs;
+  }
 
 template<typename elementT>
 constexpr
 bool
 operator!=(const refcnt_ptr<elementT>& lhs, nullptr_t) noexcept
-  { return !!lhs;  }
+  {
+    return !!lhs;
+  }
 
 template<typename elementT>
 constexpr
 bool
 operator==(nullptr_t, const refcnt_ptr<elementT>& rhs) noexcept
-  { return !rhs;  }
+  {
+    return !rhs;
+  }
 
 template<typename elementT>
 constexpr
 bool
 operator!=(nullptr_t, const refcnt_ptr<elementT>& rhs) noexcept
-  { return !!rhs;  }
+  {
+    return !!rhs;
+  }
 
 template<typename elementT>
 inline
 void
 swap(refcnt_ptr<elementT>& lhs, refcnt_ptr<elementT>& rhs) noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 template<typename charT, typename traitsT, typename elementT>
 inline
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt, const refcnt_ptr<elementT>& rhs)
-  { return fmt << rhs.get();  }
+  {
+    return fmt << rhs.get();
+  }
 
 template<typename elementT, typename... paramsT>
 inline
@@ -404,5 +421,4 @@ const_pointer_cast(refcnt_ptr<sourceT>&& sptr) noexcept
   }
 
 }  // namespace rocket
-
 #endif

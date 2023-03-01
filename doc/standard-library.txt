@@ -180,19 +180,45 @@
 
 ### `std.chrono`
 
-`std.chrono.utc_now()`
+`std.chrono.now()`
 
-	* Retrieves the wall clock time in UTC.
+	* Retrieves the wall clock time.
 
 	* Returns the number of milliseconds since the Unix epoch,
-	  represented as an integer.
+	  `1970-01-01 00:00:00 UTC`, represented as an integer.
 
-`std.chrono.local_now()`
+`std.chrono.format(time_point, [with_ms], [utc_offset])`
 
-	* Retrieves the wall clock time in the local time zone.
+	* Converts `time_point`, which shall be an integer represents the
+	  number of milliseconds since `1970-01-01 00:00:00 UTC`, to a
+	  string in the modified ISO 8601 format as with Git. Differences
+	  are:
 
-	* Returns the number of milliseconds since `1970-01-01 00:00:00`
-	  in the local time zone, represented as an integer.
+	  * a space instead of the T date/time delimiter
+	  * a space between time and time zone
+	  * no colon between hours and minutes of the timezone
+
+	  If `with_ms` is set to `true`, the string will have a 3-digit
+	  decimal part. `utc_offset` can be specified as an integer that
+	  represents the number of minutes of local time ahead of UTC
+	  time. If `utc_offset` is absent, it is obtained from the local
+	  system.
+
+	* Returns a string representing the time point.
+
+`std.chrono.parse(time_str)`
+
+	* Parses `time_str`, which shall be a string representing a time
+	  point in the modified ISO 8601 format as results of `format()`.
+	  The decimal part is optional and may have fewer or more digits.
+	  The timezone part may be `"UTC"` or `"GMT"` for UTC, or an
+	  explicit value such as `"+0400"`. If it is absent, the time is
+	  assumed to be local. Leading or trailing spaces are allowed.
+
+	* Returns an integer representing the number of milliseconds
+	  since `1970-01-01 00:00:00 UTC`.
+
+	* Throws an exception if the string is invalid.
 
 `std.chrono.hires_now()`
 
@@ -213,44 +239,6 @@
 
 	* Returns the number of milliseconds since an unspecified time
 	  point, represented as an integer.
-
-`std.chrono.local_from_utc(time_utc)`
-
-	* Converts a UTC time point to a local one. `time_utc` shall be
-	  the number of milliseconds since the Unix epoch.
-
-	* Returns the number of milliseconds since `1970-01-01 00:00:00`
-	  in the local time zone, represented as an integer.
-
-`std.chrono.utc_from_local(time_local)`
-
-	* Converts a local time point to a UTC one. `time_local` shall
-	  be the number of milliseconds since `1970-01-01 00:00:00` in
-	  the local time zone.
-
-	* Returns the number of milliseconds since the Unix epoch,
-	  represented as an integer.
-
-`std.chrono.format(time_point, [with_ms])`
-
-	* Converts `time_point`, which represents the number of
-	  milliseconds since `1970-01-01 00:00:00`, to an ASCII string in
-	  the aforementioned format, according to the ISO 8601 standard.
-	  If `with_ms` is set to `true`, the string will have a 3-digit
-	  fractional part. By default, no fractional part is added.
-
-	* Returns a string representing the time point.
-
-`std.chrono.utc_parse(time_str)`
-
-	* Parses `time_str`, which is an ASCII string representing a time
-	  point in the format `1970-01-01 00:00:00.000`, according to the
-	  ISO 8601 standard. The subsecond part is optional and may have
-	  fewer or more digits. There may be leading or trailing spaces.
-
-	* Returns the number of milliseconds since `1970-01-01 00:00:00`.
-
-	* Throws an exception if the string is invalid.
 
 ### `std.string`
 
@@ -1336,8 +1324,8 @@
 	* Returns a string converted from `value`.
 
 	* Throws an exception if `base` is neither `2` nor `10` nor `16`,
-	  or if `ebase` is neither `2` nor `10`, or if `base` is not `10`
-	  but `ebase` is `10`.
+	  or if `ebase` is not `10` for base-10, or if `ebase` is not `2`
+	  for base -2 or base-16.
 
 `std.numeric.parse(text)`
 
@@ -1352,9 +1340,9 @@
 	  * NaNs:
 	    `[+-]?nan`
 	  * Binary (base-2):
-	    `[+-]?0[bB][01]+(\.[01]+)?([epEP][-+]?[0-9]+)?`
+	    `[+-]?0[bB][01]+(\.[01]+)?([eE][-+]?[0-9]+)?`
 	  * Hexadecimal (base-16):
-	    `[+-]?0x[0-9a-fA-F]+(\.[0-9a-fA-F]+)?([epEP][-+]?[0-9]+)?`
+	    `[+-]?0x[0-9a-fA-F]+(\.[0-9a-fA-F]+)?([pP][-+]?[0-9]+)?`
 	  * Decimal (base-10):
 	    `[+-]?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?`
 
@@ -2437,7 +2425,7 @@
 
 ### `std.json`
 
-`std.json.format([value], [indent])`
+`std.json.format([value], [indent], [json5])`
 
 	* Converts a value to a string in the JSON format, according to
 	  IETF RFC 7159. This function generates text that conforms to
@@ -2446,22 +2434,10 @@
 	  `null` otherwise. If `indent` is set to a string, it is used as
 	  each level of indention following a line break, unless it is
 	  empty, in which case no line break is inserted. If `indent` is
-	  set to an integer, it is clamped between `0` and `10`
+	  specified as an integer, it is clamped between `0` and `10`
 	  inclusively and this function behaves as if a string consisting
-	  of this number of spaces was set. Its default value is an empty
-	  string.
-
-	* Returns the formatted text as a string.
-
-`std.json.format5([value], [indent])`
-
-	* Converts a value to a string in the JSON5 format. In addition
-	  to IETF RFC 7159, a few extensions in ECMAScript 5.1 have been
-	  introduced to make the syntax more human-readable. Infinities
-	  and NaNs are preserved. Object keys that are valid identifiers
-	  are not quoted. Trailing commas of array and object members are
-	  appended if `indent` is neither null nor zero nor an empty
-	  string. This function is otherwise identical to `format()`.
+	  of this number of spaces was set. If `json5` is set to `true`,
+	  the JSON5 alternative format is used.
 
 	* Returns the formatted text as a string.
 

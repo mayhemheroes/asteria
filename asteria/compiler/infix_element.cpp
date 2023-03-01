@@ -8,7 +8,6 @@
 #include "enums.hpp"
 #include "../runtime/enums.hpp"
 #include "../utils.hpp"
-
 namespace asteria {
 
 Precedence
@@ -94,63 +93,63 @@ tell_precedence() const noexcept
     }
   }
 
-Infix_Element&
+void
 Infix_Element::
 extract(cow_vector<Expression_Unit>& units)
   {
     switch(this->index()) {
       case index_head: {
-        auto& altr = this->m_stor.as<index_head>();
+        auto& altr = this->m_stor.mut<index_head>();
 
         // Move-append all units into `units`.
         units.append(altr.units.move_begin(), altr.units.move_end());
-        return *this;
+        return;
       }
 
       case index_ternary: {
-        auto& altr = this->m_stor.as<index_ternary>();
+        auto& altr = this->m_stor.mut<index_ternary>();
 
         // Construct a branch unit from both branches, then append it to `units`.
         Expression_Unit::S_branch xunit = { altr.sloc, ::std::move(altr.branch_true),
                                             ::std::move(altr.branch_false), altr.assign };
         units.emplace_back(::std::move(xunit));
-        return *this;
+        return;
       }
 
       case index_logical_and: {
-        auto& altr = this->m_stor.as<index_logical_and>();
+        auto& altr = this->m_stor.mut<index_logical_and>();
 
         // Construct a branch unit from the TRUE branch and an empty FALSE branch, then
         // append it to `units`.
         Expression_Unit::S_branch xunit = { altr.sloc, ::std::move(altr.branch_true), { },
                                             altr.assign };
         units.emplace_back(::std::move(xunit));
-        return *this;
+        return;
       }
 
       case index_logical_or: {
-        auto& altr = this->m_stor.as<index_logical_or>();
+        auto& altr = this->m_stor.mut<index_logical_or>();
 
         // Construct a branch unit from an empty TRUE branch and the FALSE branch, then
         // append it to `units`.
         Expression_Unit::S_branch xunit = { altr.sloc, { }, ::std::move(altr.branch_false),
                                             altr.assign };
         units.emplace_back(::std::move(xunit));
-        return *this;
+        return;
       }
 
       case index_coalescence: {
-        auto& altr = this->m_stor.as<index_coalescence>();
+        auto& altr = this->m_stor.mut<index_coalescence>();
 
         // Construct a branch unit from the NULL branch, then append it to `units`.
         Expression_Unit::S_coalescence xunit = { altr.sloc, ::std::move(altr.branch_null),
                                                  altr.assign };
         units.emplace_back(::std::move(xunit));
-        return *this;
+        return;
       }
 
       case index_general: {
-        auto& altr = this->m_stor.as<index_general>();
+        auto& altr = this->m_stor.mut<index_general>();
 
         // N.B. `units` is the LHS operand.
         // Append the RHS operand to the LHS operand, followed by the operator, forming the
@@ -160,7 +159,7 @@ extract(cow_vector<Expression_Unit>& units)
         // Append the operator itself.
         Expression_Unit::S_operator_rpn xunit = { altr.sloc, altr.xop, altr.assign };
         units.emplace_back(::std::move(xunit));
-        return *this;
+        return;
       }
 
       default:
@@ -176,22 +175,22 @@ mut_junction() noexcept
   {
     switch(this->index()) {
       case index_head:
-        return this->m_stor.as<index_head>().units;
+        return this->m_stor.mut<index_head>().units;
 
       case index_ternary:
-        return this->m_stor.as<index_ternary>().branch_false;
+        return this->m_stor.mut<index_ternary>().branch_false;
 
       case index_logical_and:
-        return this->m_stor.as<index_logical_and>().branch_true;
+        return this->m_stor.mut<index_logical_and>().branch_true;
 
       case index_logical_or:
-        return this->m_stor.as<index_logical_or>().branch_false;
+        return this->m_stor.mut<index_logical_or>().branch_false;
 
       case index_coalescence:
-        return this->m_stor.as<index_coalescence>().branch_null;
+        return this->m_stor.mut<index_coalescence>().branch_null;
 
       case index_general:
-        return this->m_stor.as<index_general>().rhs;
+        return this->m_stor.mut<index_general>().rhs;
 
       default:
         ASTERIA_TERMINATE((

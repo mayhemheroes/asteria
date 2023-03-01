@@ -5,7 +5,6 @@
 #define ROCKET_XALLOCATOR_
 
 #include "fwd.hpp"
-
 namespace rocket {
 
 #include "details/xallocator.ipp"
@@ -70,5 +69,4 @@ struct is_always_equal_allocator
   { };
 
 }  // namespace rocket
-
 #endif

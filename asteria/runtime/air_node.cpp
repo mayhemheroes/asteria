@@ -21,7 +21,6 @@
 #include "../compiler/expression_unit.hpp"
 #include "../llds/avmc_queue.hpp"
 #include "../utils.hpp"
-
 namespace asteria {
 namespace {
 
@@ -173,10 +172,10 @@ do_for_each_get_variables(ContainerT& cont, Variable_HashMap& staged,
       r.get_variables(staged, temp);
   }
 
-template<size_t sizeT>
+template<size_t N>
 struct Sparam_queues
   {
-    array<AVMC_Queue, sizeT> queues;
+    AVMC_Queue queues[N];
 
     void
     get_variables(Variable_HashMap& staged, Variable_HashMap& temp) const
@@ -993,7 +992,7 @@ struct Traits_push_global_reference
 
     ROCKET_FLATTEN static
     AIR_Status
-    execute(Executive_Context& ctx, AVMC_Queue::Uparam up, const phsh_string& name)
+    execute(Executive_Context& ctx, AVMC_Queue::Uparam up, phsh_stringR name)
       {
         // Look for the name in the global context.
         size_t hint = up.u16;
@@ -1039,7 +1038,7 @@ struct Traits_push_local_reference
 
     ROCKET_FLATTEN static
     AIR_Status
-    execute(Executive_Context& ctx, AVMC_Queue::Uparam up, const phsh_string& name)
+    execute(Executive_Context& ctx, AVMC_Queue::Uparam up, phsh_stringR name)
       {
         // Get the context.
         Executive_Context* qctx = &ctx;
@@ -1347,7 +1346,7 @@ struct Traits_member_access
 
     ROCKET_FLATTEN static
     AIR_Status
-    execute(Executive_Context& ctx, const phsh_string& name)
+    execute(Executive_Context& ctx, phsh_stringR name)
       {
         auto& ref = ctx.stack().mut_top();
         ref.push_modifier_object_key(name);

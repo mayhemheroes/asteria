@@ -60,7 +60,6 @@
 
 #define ASTERIA_INCOMPLET(T)  \
     template<typename T##_IKYvW2aJ = T, typename T = T##_IKYvW2aJ>
-
 namespace asteria {
 namespace noadl = asteria;
 
@@ -101,6 +100,7 @@ using ::rocket::end;
 using ::rocket::xswap;
 using ::rocket::swap;
 using ::rocket::size;
+using ::rocket::ssize;
 using ::rocket::static_pointer_cast;
 using ::rocket::dynamic_pointer_cast;
 using ::rocket::const_pointer_cast;
@@ -127,7 +127,9 @@ using ::rocket::atomic_release;
 using ::rocket::atomic_acq_rel;
 using ::rocket::atomic_seq_cst;
 
+using stringR = const cow_string&;
 using phsh_string = ::rocket::prehashed_string;
+using phsh_stringR = const phsh_string&;
 using bmask32 = ::rocket::bit_mask<uint32_t>;
 using bmask64 = ::rocket::bit_mask<uint64_t>;
 using bmword = ::rocket::bit_mask<uintptr_t>;
@@ -258,25 +260,33 @@ template<typename TargetT, typename RealT>
 constexpr
 TargetT
 unerase_cast(const refcnt_ptr<rcfwd<RealT>>& ptr) noexcept  // like `static_cast`
-  { return static_cast<TargetT>(ptr.get());  }
+  {
+    return static_cast<TargetT>(ptr.get());
+  }
 
 template<typename TargetT, typename RealT>
 constexpr
 TargetT
 unerase_cast(const refcnt_ptr<const rcfwd<RealT>>& ptr) noexcept  // like `static_cast`
-  { return static_cast<TargetT>(ptr.get());  }
+  {
+    return static_cast<TargetT>(ptr.get());
+  }
 
 template<typename TargetT, typename RealT>
 constexpr
 refcnt_ptr<TargetT>
 unerase_pointer_cast(const refcnt_ptr<rcfwd<RealT>>& ptr) noexcept  // like `static_pointer_cast`
-  { return static_pointer_cast<TargetT>(ptr);  }
+  {
+    return static_pointer_cast<TargetT>(ptr);
+  }
 
 template<typename TargetT, typename RealT>
 constexpr
 refcnt_ptr<TargetT>
 unerase_pointer_cast(const refcnt_ptr<const rcfwd<RealT>>& ptr) noexcept  // like `static_pointer_cast`
-  { return static_pointer_cast<TargetT>(ptr);  }
+  {
+    return static_pointer_cast<TargetT>(ptr);
+  }
 
 // Opaque (user-defined) type support
 struct Abstract_Opaque
@@ -311,7 +321,9 @@ struct Abstract_Opaque
 inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const Abstract_Opaque& opaq)
-  { return opaq.describe(fmt);  }
+  {
+    return opaq.describe(fmt);
+  }
 
 struct Abstract_Function
   : public rcfwd<Abstract_Function>
@@ -342,7 +354,9 @@ struct Abstract_Function
 inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const Abstract_Function& func)
-  { return func.describe(fmt);  }
+  {
+    return func.describe(fmt);
+  }
 
 class cow_opaque
   {
@@ -356,17 +370,22 @@ class cow_opaque
 
     template<typename OpaqT>
     cow_opaque(const refcnt_ptr<OpaqT>& sptr) noexcept
-      : m_sptr(sptr)
-      { }
+      : m_sptr(sptr)  { }
 
     template<typename OpaqT>
     cow_opaque(refcnt_ptr<OpaqT>&& sptr) noexcept
-      : m_sptr(::std::move(sptr))
-      { }
+      : m_sptr(::std::move(sptr))  { }
 
     cow_opaque&
     operator=(nullptr_t) &
       { return this->reset();  }
+
+    cow_opaque&
+    swap(cow_opaque& other) noexcept
+      {
+        this->m_sptr.swap(other.m_sptr);
+        return *this;
+      }
 
   public:
     bool
@@ -427,11 +446,6 @@ class cow_opaque
     open();
   };
 
-inline
-tinyfmt&
-operator<<(tinyfmt& fmt, const cow_opaque& opaq)
-  { return opaq.describe(fmt);  }
-
 template<typename OpaqueT>
 inline
 const OpaqueT&
@@ -489,6 +503,20 @@ open()
     return *toptr;
   }
 
+inline
+void
+swap(cow_opaque& lhs, cow_opaque& rhs) noexcept
+  {
+    lhs.swap(rhs);
+  }
+
+inline
+tinyfmt&
+operator<<(tinyfmt& fmt, const cow_opaque& opaq)
+  {
+    return opaq.describe(fmt);
+  }
+
 // Function type support
 class cow_function
   {
@@ -504,22 +532,26 @@ class cow_function
 
     constexpr
     cow_function(const char* desc, simple_function* fptr) noexcept
-      : m_desc(desc), m_fptr(fptr)
-      { }
+      : m_desc(desc), m_fptr(fptr)  { }
 
     template<typename FuncT>
     cow_function(const refcnt_ptr<FuncT>& sptr) noexcept
-      : m_sptr(sptr)
-      { }
+      : m_sptr(sptr)  { }
 
     template<typename FuncT>
     cow_function(refcnt_ptr<FuncT>&& sptr) noexcept
-      : m_sptr(::std::move(sptr))
-      { }
+      : m_sptr(::std::move(sptr))  { }
 
     cow_function&
     operator=(nullptr_t) &
       { return this->reset();  }
+
+    cow_function&
+    swap(cow_function& other) noexcept
+      {
+        this->m_sptr.swap(other.m_sptr);
+        return *this;
+      }
 
   public:
     bool
@@ -597,9 +629,18 @@ class cow_function
   };
 
 inline
+void
+swap(cow_function& lhs, cow_function& rhs) noexcept
+  {
+    lhs.swap(rhs);
+  }
+
+inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const cow_function& func)
-  { return func.describe(fmt);  }
+  {
+    return func.describe(fmt);
+  }
 
 // Fundamental types
 using V_null      = nullopt_t;
@@ -692,7 +733,7 @@ enum Compiler_Status : uint32_t
     compiler_status_escape_sequence_incomplete                 = 1009,
     compiler_status_escape_sequence_invalid_hex                = 1010,
     compiler_status_escape_utf_code_point_invalid              = 1011,
-    compiler_status_numeric_literal_invalid                    = 1012,
+    compiler_status_reserved_1012                              = 1012,
     compiler_status_integer_literal_overflow                   = 1013,
     compiler_status_integer_literal_inexact                    = 1014,
     compiler_status_real_literal_overflow                      = 1015,

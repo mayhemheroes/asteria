@@ -6,142 +6,106 @@
 
 #include "fwd.hpp"
 #include "assert.hpp"
-#include <pthread.h>
-
+#include <mutex>
 namespace rocket {
-
-class recursive_mutex;
-
-#include "details/recursive_mutex.ipp"
 
 class recursive_mutex
   {
-  public:
-    class unique_lock;
+    friend class condition_variable;
 
   private:
-    ::pthread_mutex_t m_mutex[1] = { PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };
+    ::std::recursive_mutex m_mtx;
 
   public:
-    constexpr
-    recursive_mutex() noexcept
-      { }
+    recursive_mutex() = default;
 
     recursive_mutex(const recursive_mutex&) = delete;
-
-    recursive_mutex&
-    operator=(const recursive_mutex&) = delete;
-
-    ~recursive_mutex()
-      {
-        int r = ::pthread_mutex_destroy(this->m_mutex);
-        ROCKET_ASSERT(r == 0);
-      }
-  };
-
-class recursive_mutex::unique_lock
-  {
-  private:
-    details_recursive_mutex::stored_pointer m_sth;
+    recursive_mutex& operator=(const recursive_mutex&) = delete;
 
   public:
-    constexpr
-    unique_lock() noexcept
-      { }
-
-    explicit
-    unique_lock(recursive_mutex& parent) noexcept
+    // This is the only public interface, other than constructors
+    // and the destructor.
+    class unique_lock
       {
-        this->lock(parent);
-      }
+        friend class condition_variable;
 
-    unique_lock(unique_lock&& other) noexcept
-      {
-        this->swap(other);
-      }
+      private:
+        ::std::recursive_mutex* m_mtx = nullptr;
 
-    unique_lock&
-    operator=(unique_lock&& other) & noexcept
-      {
-        this->m_sth.exchange_with(other.m_sth);
-        return *this;
-      }
+      public:
+        constexpr
+        unique_lock() noexcept = default;
 
-    unique_lock&
-    swap(unique_lock& other) noexcept
-      {
-        this->m_sth.exchange_with(other.m_sth);
-        return *this;
-      }
+        unique_lock(recursive_mutex& m) noexcept
+          {
+            m.m_mtx.lock();
+            this->m_mtx = &(m.m_mtx);
+          }
 
-    ~unique_lock()
-      {
-        this->unlock();
-      }
+        unique_lock(unique_lock&& other) noexcept
+          {
+            this->m_mtx = other.m_mtx;
+            other.m_mtx = nullptr;
+          }
 
-  public:
-    explicit operator
-    bool() const noexcept
-      { return this->m_sth.get() != nullptr;  }
+        unique_lock&
+        operator=(unique_lock&& other) & noexcept
+          {
+            if(this->m_mtx == other.m_mtx)
+              return *this;
 
-    bool
-    is_locking(const recursive_mutex& m) const noexcept
-      { return this->m_sth.get() == m.m_mutex;  }
+            this->unlock();
+            this->m_mtx = other.m_mtx;
+            other.m_mtx = nullptr;
+            return *this;
+          }
 
-    bool
-    is_locking(const recursive_mutex&&) const noexcept = delete;
+        unique_lock&
+        swap(unique_lock& other) noexcept
+          {
+            ::std::swap(this->m_mtx, other.m_mtx);
+            return *this;
+          }
 
-    unique_lock&
-    unlock() noexcept
-      {
-        this->m_sth.reset(nullptr);
-        return *this;
-      }
+        ~unique_lock()
+          {
+            this->unlock();
+          }
 
-    unique_lock&
-    try_lock(recursive_mutex& m) noexcept
-      {
-        // Return immediately if the same mutex is already held.
-        // This is a bit faster than locking and relocking it.
-        auto ptr = m.m_mutex;
-        if(ROCKET_UNEXPECT(ptr == this->m_sth.get()))
-          return *this;
+      public:
+        explicit constexpr operator
+        bool() const noexcept
+          { return this->m_mtx != nullptr;  }
 
-        // There shall be no gap between the unlock and lock operations.
-        // If the mutex cannot be locked, there is no effect.
-        int r = ::pthread_mutex_trylock(ptr);
-        ROCKET_ASSERT(r != EINVAL);
-        if(r != 0)
-          return *this;
+        void
+        lock(recursive_mutex& m) noexcept
+          {
+            if(this->m_mtx == &(m.m_mtx))
+              return;
 
-        this->m_sth.reset(ptr);
-        return *this;
-      }
+            m.m_mtx.lock();  // note lock first
+            this->unlock();
+            this->m_mtx = &(m.m_mtx);
+          }
 
-    unique_lock&
-    lock(recursive_mutex& m) noexcept
-      {
-        // Return immediately if the same mutex is already held.
-        // This is a bit faster than locking and relocking it.
-        auto ptr = m.m_mutex;
-        if(ROCKET_UNEXPECT(ptr == this->m_sth.get()))
-          return *this;
+        void
+        unlock() noexcept
+          {
+            if(this->m_mtx == nullptr)
+              return;
 
-        // There shall be no gap between the unlock and lock operations.
-        int r = ::pthread_mutex_lock(ptr);
-        ROCKET_ASSERT(r == 0);
-
-        this->m_sth.reset(ptr);
-        return *this;
-      }
+            this->m_mtx->unlock();
+            this->m_mtx = nullptr;
+          }
+      };
   };
 
 inline
 void
-swap(recursive_mutex::unique_lock& lhs, recursive_mutex::unique_lock& rhs)
-  noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+swap(recursive_mutex::unique_lock& lhs, recursive_mutex::unique_lock& rhs) noexcept
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace rocket
-
 #endif

@@ -8,7 +8,6 @@
 #include "assert.hpp"
 #include "char_traits.hpp"
 #include "xallocator.hpp"
-
 namespace rocket {
 
 template<typename charT, typename traitsT = char_traits<charT>, typename allocT = allocator<charT>>
@@ -40,8 +39,7 @@ class basic_linear_buffer
   public:
     explicit constexpr
     basic_linear_buffer(const allocator_type& alloc) noexcept
-      : m_stor(alloc)
-      { }
+      : m_stor(alloc)  { }
 
     basic_linear_buffer(const basic_linear_buffer& other)
       : m_stor(allocator_traits<allocator_type>::select_on_container_copy_construction(
@@ -70,8 +68,7 @@ class basic_linear_buffer
 
     constexpr
     basic_linear_buffer() noexcept(is_nothrow_constructible<allocator_type>::value)
-      : basic_linear_buffer(allocator_type())
-      { }
+      : basic_linear_buffer(allocator_type())  { }
 
     basic_linear_buffer&
     operator=(const basic_linear_buffer& other) &
@@ -187,10 +184,6 @@ class basic_linear_buffer
     max_size() const noexcept
       { return this->m_stor.max_size();  }
 
-    size_type
-    capacity() const noexcept
-      { return this->m_stor.capacity() - this->m_eoff;  }
-
     basic_linear_buffer&
     clear() noexcept
       {
@@ -283,34 +276,49 @@ class basic_linear_buffer
       { return this->m_stor.mut_data() + this->m_goff;  }
 
     size_type
-    reserve(size_type nbump)
+    capacity_after_end() const noexcept
+      { return this->m_stor.capacity() - this->m_eoff;  }
+
+    size_type
+    reserve_after_end(size_type nbump)
       {
-        if(ROCKET_UNEXPECT(nbump > this->capacity())) {
-          // Reallocate the buffer.
-          auto nused = this->m_stor.reserve(this->m_goff, this->m_eoff, nbump);
-          // Set up the new offsets as the contents have now been moved to the beginning.
+        if(ROCKET_UNEXPECT(nbump > this->capacity_after_end())) {
+          // Relocate existent data.
+          size_type nused = this->m_stor.reserve(this->m_goff, this->m_eoff, nbump);
           this->m_goff = 0;
           this->m_eoff = nused;
         }
 #ifdef ROCKET_DEBUG
         traits_type::assign(this->mut_end(), nbump, value_type(0xD3D3D3D3));
 #endif
-        return this->capacity();
+        return this->capacity_after_end();
       }
 
     ROCKET_ALWAYS_INLINE
     basic_linear_buffer&
     accept(size_type nbump) noexcept
       {
-        ROCKET_ASSERT(nbump <= this->capacity());
+        ROCKET_ASSERT(nbump <= this->capacity_after_end());
         this->m_eoff += nbump;
+        return *this;
+      }
+
+    ROCKET_ALWAYS_INLINE
+    basic_linear_buffer&
+    unaccept(size_type nbump) noexcept
+      {
+        ROCKET_ASSERT(nbump <= this->m_eoff - this->m_goff);
+#ifdef ROCKET_DEBUG
+        traits_type::assign(this->mut_end() - nbump, nbump, value_type(0xD9D9D9D9));
+#endif
+        this->m_eoff -= nbump;
         return *this;
       }
 
     basic_linear_buffer&
     putc(value_type c)
       {
-        this->reserve(1);
+        this->reserve_after_end(1);
         traits_type::assign(this->mut_end()[0], c);
         this->accept(1);
         return *this;
@@ -319,7 +327,7 @@ class basic_linear_buffer
     basic_linear_buffer&
     putn(size_type n, value_type c)
       {
-        this->reserve(n);
+        this->reserve_after_end(n);
         traits_type::assign(this->mut_end(), n, c);
         this->accept(n);
         return *this;
@@ -328,7 +336,7 @@ class basic_linear_buffer
     basic_linear_buffer&
     putn(const value_type* s, size_type n)
       {
-        this->reserve(n);
+        this->reserve_after_end(n);
         traits_type::copy(this->mut_end(), s, n);
         this->accept(n);
         return *this;
@@ -336,7 +344,9 @@ class basic_linear_buffer
 
     basic_linear_buffer&
     puts(const value_type* s)
-      { return this->putn(s, traits_type::length(s));  }
+      {
+        return this->putn(s, traits_type::length(s));
+      }
   };
 
 template<typename charT, typename traitsT, typename allocT>
@@ -344,19 +354,18 @@ inline
 void
 swap(basic_linear_buffer<charT, traitsT, allocT>& lhs, basic_linear_buffer<charT, traitsT, allocT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
-extern
-template
+extern template
 class basic_linear_buffer<char>;
 
-extern
-template
+extern template
 class basic_linear_buffer<wchar_t>;
 
 using linear_buffer   = basic_linear_buffer<char>;
 using linear_wbuffer  = basic_linear_buffer<wchar_t>;
 
 }  // namespace rocket
-
 #endif

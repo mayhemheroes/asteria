@@ -7,7 +7,6 @@
 #include "fwd.hpp"
 #include "details/value.ipp"
 #include <cmath>
-
 namespace asteria {
 
 class Value
@@ -35,16 +34,14 @@ class Value
     // Constructors and assignment operators
     constexpr
     Value(nullopt_t = nullopt) noexcept
-      : m_bytes()
-      { }
+      : m_bytes()  { }
 
     template<typename XValT,
     ROCKET_ENABLE_IF(details_value::Valuable<XValT>::direct_init::value)>
     Value(XValT&& xval)
       noexcept(::std::is_nothrow_constructible<decltype(m_stor),
                         typename details_value::Valuable<XValT>::via_type&&>::value)
-      : m_stor(typename details_value::Valuable<XValT>::via_type(::std::forward<XValT>(xval)))
-      { }
+      : m_stor(typename details_value::Valuable<XValT>::via_type(::std::forward<XValT>(xval)))  { }
 
     template<typename XValT,
     ROCKET_DISABLE_IF(details_value::Valuable<XValT>::direct_init::value)>
@@ -66,8 +63,7 @@ class Value
       }
 
     Value(const Value& other) noexcept
-      : m_stor(other.m_stor)
-      { }
+      : m_stor(other.m_stor)  { }
 
     Value&
     operator=(const Value& other) & noexcept
@@ -156,7 +152,7 @@ class Value
     mut_boolean()
       {
         if(this->type() == type_boolean)
-          return this->m_stor.as<V_boolean>();
+          return this->m_stor.mut<V_boolean>();
 
         this->do_throw_type_mismatch("`boolean`");
       }
@@ -178,7 +174,7 @@ class Value
     mut_integer()
       {
         if(this->type() == type_integer)
-          return this->m_stor.as<V_integer>();
+          return this->m_stor.mut<V_integer>();
 
         this->do_throw_type_mismatch("`integer`");
       }
@@ -203,11 +199,11 @@ class Value
     mut_real()
       {
         if(this->type() == type_real)
-          return this->m_stor.as<V_real>();
+          return this->m_stor.mut<V_real>();
 
         if(this->type() == type_integer)
           return this->m_stor.emplace<V_real>(
-                static_cast<V_real>(this->m_stor.as<V_integer>()));
+                static_cast<V_real>(this->m_stor.mut<V_integer>()));
 
         this->do_throw_type_mismatch("`integer` or `real`");
       }
@@ -229,7 +225,7 @@ class Value
     mut_string()
       {
         if(this->type() == type_string)
-          return this->m_stor.as<V_string>();
+          return this->m_stor.mut<V_string>();
 
         this->do_throw_type_mismatch("`string`");
       }
@@ -251,7 +247,7 @@ class Value
     mut_function()
       {
         if(this->type() == type_function)
-          return this->m_stor.as<V_function>();
+          return this->m_stor.mut<V_function>();
 
         this->do_throw_type_mismatch("`function`");
       }
@@ -273,7 +269,7 @@ class Value
     mut_opaque()
       {
         if(this->type() == type_opaque)
-          return this->m_stor.as<V_opaque>();
+          return this->m_stor.mut<V_opaque>();
 
         this->do_throw_type_mismatch("`opaque`");
       }
@@ -295,7 +291,7 @@ class Value
     mut_array()
       {
         if(this->type() == type_array)
-          return this->m_stor.as<V_array>();
+          return this->m_stor.mut<V_array>();
 
         this->do_throw_type_mismatch("`array`");
       }
@@ -317,7 +313,7 @@ class Value
     mut_object()
       {
         if(this->type() == type_object)
-          return this->m_stor.as<V_object>();
+          return this->m_stor.mut<V_object>();
 
         this->do_throw_type_mismatch("`object`");
       }
@@ -425,12 +421,16 @@ class Value
 inline
 void
 swap(Value& lhs, Value& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const Value& value)
-  { return value.print(fmt);  }
+  {
+    return value.print(fmt);
+  }
 
 }  // namespace asteria
 #endif

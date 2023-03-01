@@ -8,7 +8,6 @@
 #include "reference.hpp"
 #include "../value.hpp"
 #include "../source_location.hpp"
-
 namespace asteria {
 
 class AIR_Node
@@ -350,8 +349,7 @@ class AIR_Node
     constexpr
     AIR_Node(XNodeT&& xnode)
       noexcept(::std::is_nothrow_constructible<decltype(m_stor), XNodeT&&>::value)
-      : m_stor(::std::forward<XNodeT>(xnode))
-      { }
+      : m_stor(::std::forward<XNodeT>(xnode))  { }
 
     template<typename XNodeT,
     ROCKET_ENABLE_IF(::std::is_assignable<decltype(m_stor)&, XNodeT&&>::value)>
@@ -396,7 +394,9 @@ class AIR_Node
 inline
 void
 swap(AIR_Node& lhs, AIR_Node& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

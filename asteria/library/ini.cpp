@@ -5,7 +5,6 @@
 #include "ini.hpp"
 #include "../runtime/argument_reader.hpp"
 #include "../utils.hpp"
-
 namespace asteria {
 namespace {
 
@@ -14,7 +13,7 @@ constexpr char s_comment[]  = ";#";
 constexpr char s_space[]    = " \t";
 
 tinyfmt&
-do_format_key(tinyfmt& fmt, const cow_string& key)
+do_format_key(tinyfmt& fmt, stringR key)
   {
     if(key.empty())
       ASTERIA_THROW_RUNTIME_ERROR(("Empty key is not allowed"));

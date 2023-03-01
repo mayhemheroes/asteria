@@ -19,9 +19,6 @@ nobase_include_HEADERS +=  \
   %reldir%/details/array.ipp  \
   %reldir%/details/linear_buffer.ipp  \
   %reldir%/details/ascii_case.ipp  \
-  %reldir%/details/mutex.ipp  \
-  %reldir%/details/recursive_mutex.ipp  \
-  %reldir%/details/once_flag.ipp  \
   %reldir%/compiler.h  \
   %reldir%/assert.hpp  \
   %reldir%/fwd.hpp  \
@@ -81,3 +78,10 @@ lib_librocket_la_SOURCES =  \
   %reldir%/format.cpp  \
   %reldir%/prehashed_string.cpp  \
   ${END}
+
+lib_librocket_la_CXXFLAGS = ${AM_CXXFLAGS}
+lib_librocket_la_LDFLAGS =
+
+if enable_pch
+lib_librocket_la_CXXFLAGS += -include %reldir%/../asteria/precompiled.xipp
+endif

@@ -4,7 +4,6 @@
 #ifndef ROCKET_UNIQUE_HANDLE_
 #  error Please include <rocket/unique_handle.hpp> instead.
 #endif
-
 namespace details_unique_handle {
 
 template<typename handleT, typename closerT>
@@ -25,16 +24,14 @@ class stored_handle
     explicit constexpr
     stored_handle() noexcept(is_nothrow_constructible<closer_type>::value)
       : closer_base(),
-        m_hv(this->as_closer().null())
-      { }
+        m_hv(this->as_closer().null())  { }
 
     template<typename... clparamsT>
     explicit constexpr
     stored_handle(handle_type hv, clparamsT&&... clparams)
       noexcept(is_nothrow_constructible<closer_type, clparamsT&&...>::value)
       : closer_base(::std::forward<clparamsT>(clparams)...),
-        m_hv(::std::move(hv))
-      { }
+        m_hv(::std::move(hv))  { }
 
     ~stored_handle()
       { this->reset(this->as_closer().null());  }
@@ -88,8 +85,7 @@ class default_closer_wrapper
   public:
     constexpr  // non-explicit
     default_closer_wrapper(closerT&& xcl)
-      : m_cl(::std::forward<closerT>(xcl))
-      { }
+      : m_cl(::std::forward<closerT>(xcl))  { }
 
   public:
     constexpr

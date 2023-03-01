@@ -8,7 +8,6 @@
 #include "assert.hpp"
 #include "throw.hpp"
 #include "xallocator.hpp"
-
 namespace rocket {
 
 template<typename elementT, typename deleterT = default_delete<const elementT>>
@@ -39,38 +38,31 @@ class unique_ptr
     // 23.11.1.2.1, constructors
     constexpr
     unique_ptr(nullptr_t = nullptr) noexcept(is_nothrow_constructible<deleter_type>::value)
-      : m_sth()
-      { }
+      : m_sth()  { }
 
     explicit constexpr
     unique_ptr(const deleter_type& del) noexcept
-      : m_sth(nullptr, del)
-      { }
+      : m_sth(nullptr, del)  { }
 
     explicit constexpr
     unique_ptr(pointer ptr) noexcept(is_nothrow_constructible<deleter_type>::value)
-      : m_sth(ptr)
-      { }
+      : m_sth(ptr)  { }
 
     constexpr
     unique_ptr(pointer ptr, const deleter_type& del) noexcept
-      : m_sth(ptr, del)
-      { }
+      : m_sth(ptr, del)  { }
 
     template<typename yelementT, typename ydeleterT,
     ROCKET_ENABLE_IF(is_convertible<typename unique_ptr<yelementT, ydeleterT>::pointer, pointer>::value),
     ROCKET_ENABLE_IF(is_constructible<deleter_type, typename unique_ptr<yelementT, ydeleterT>::deleter_type&&>::value)>
     unique_ptr(unique_ptr<yelementT, ydeleterT>&& other) noexcept
-      : m_sth(other.m_sth.release(), ::std::move(other.m_sth.as_deleter()))
-      { }
+      : m_sth(other.m_sth.release(), ::std::move(other.m_sth.as_deleter()))  { }
 
     unique_ptr(unique_ptr&& other) noexcept
-      : m_sth(other.m_sth.release(), ::std::move(other.m_sth.as_deleter()))
-      { }
+      : m_sth(other.m_sth.release(), ::std::move(other.m_sth.as_deleter()))  { }
 
     unique_ptr(unique_ptr&& other, const deleter_type& del) noexcept
-      : m_sth(other.m_sth.release(), del)
-      { }
+      : m_sth(other.m_sth.release(), del)  { }
 
     // 23.11.1.2.3, assignment
     unique_ptr&
@@ -159,80 +151,104 @@ constexpr
 bool
 operator==(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs) noexcept
-  { return lhs.get() == rhs.get();  }
+  {
+    return lhs.get() == rhs.get();
+  }
 
 template<typename xelementT, typename xdeleterT, typename yelementT, typename ydeleterT>
 constexpr
 bool
 operator!=(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs) noexcept
-  { return lhs.get() != rhs.get();  }
+  {
+    return lhs.get() != rhs.get();
+  }
 
 template<typename xelementT, typename xdeleterT, typename yelementT, typename ydeleterT>
 constexpr
 bool
 operator<(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs)
-  { return lhs.get() < rhs.get();  }
+  {
+    return lhs.get() < rhs.get();
+  }
 
 template<typename xelementT, typename xdeleterT, typename yelementT, typename ydeleterT>
 constexpr
 bool
 operator>(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs)
-  { return lhs.get() > rhs.get();  }
+  {
+    return lhs.get() > rhs.get();
+  }
 
 template<typename xelementT, typename xdeleterT, typename yelementT, typename ydeleterT>
 constexpr
 bool
 operator<=(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs)
-  { return lhs.get() <= rhs.get();  }
+  {
+    return lhs.get() <= rhs.get();
+  }
 
 template<typename xelementT, typename xdeleterT, typename yelementT, typename ydeleterT>
 constexpr
 bool
 operator>=(const unique_ptr<xelementT, xdeleterT>& lhs,
            const unique_ptr<yelementT, ydeleterT>& rhs)
-  { return lhs.get() >= rhs.get();  }
+  {
+    return lhs.get() >= rhs.get();
+  }
 
 template<typename elementT, typename deleterT>
 constexpr
 bool
 operator==(const unique_ptr<elementT, deleterT>& lhs, nullptr_t) noexcept
-  { return !lhs;  }
+  {
+    return !lhs;
+  }
 
 template<typename elementT, typename deleterT>
 constexpr
 bool
 operator!=(const unique_ptr<elementT, deleterT>& lhs, nullptr_t) noexcept
-  { return !!lhs;  }
+  {
+    return !!lhs;
+  }
 
 template<typename elementT, typename deleterT>
 constexpr
 bool
 operator==(nullptr_t, const unique_ptr<elementT, deleterT>& rhs) noexcept
-  { return !rhs;  }
+  {
+    return !rhs;
+  }
 
 template<typename elementT, typename deleterT>
 constexpr
 bool
 operator!=(nullptr_t, const unique_ptr<elementT, deleterT>& rhs) noexcept
-  { return !!rhs;  }
+  {
+    return !!rhs;
+  }
 
 template<typename elementT, typename deleterT>
 inline
 void
 swap(unique_ptr<elementT, deleterT>& lhs, unique_ptr<elementT, deleterT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 template<typename charT, typename traitsT, typename elementT, typename deleterT>
 inline
 basic_tinyfmt<charT, traitsT>&
 operator<<(basic_tinyfmt<charT, traitsT>& fmt,
            const unique_ptr<elementT, deleterT>& rhs)
-  { return fmt << rhs.get();  }
+  {
+    return fmt << rhs.get();
+  }
 
 template<typename elementT, typename... paramsT>
 inline
@@ -282,5 +298,4 @@ const_pointer_cast(unique_ptr<sourceT>&& sptr) noexcept
   }
 
 }  // namespace rocket
-
 #endif

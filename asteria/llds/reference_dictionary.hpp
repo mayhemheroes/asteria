@@ -7,7 +7,6 @@
 #include "../fwd.hpp"
 #include "../runtime/reference.hpp"
 #include "../details/reference_dictionary.ipp"
-
 namespace asteria {
 
 class Reference_Dictionary
@@ -51,7 +50,7 @@ class Reference_Dictionary
     // can a null pointer be returned.
     ROCKET_PURE
     Bucket*
-    do_xprobe(const phsh_string& name) const noexcept
+    do_xprobe(phsh_stringR name) const noexcept
       {
         // Find a bucket using linear probing.
         auto mptr = ::rocket::get_probing_origin(this->m_bptr, this->m_eptr,
@@ -68,7 +67,7 @@ class Reference_Dictionary
     // This function is used to de-duplicate the implementations of
     // find functions.
     Reference*
-    do_xfind_opt(size_t* hint_opt, const phsh_string& name) const noexcept
+    do_xfind_opt(size_t* hint_opt, phsh_stringR name) const noexcept
       {
         // Be advised that `do_xprobe()` shall not be called when the
         // table has not been allocated.
@@ -128,7 +127,7 @@ class Reference_Dictionary
       }
 
     void
-    do_attach(Bucket* qbkt, const phsh_string& name) noexcept
+    do_attach(Bucket* qbkt, phsh_stringR name) noexcept
       {
         // Construct the node, then attach it.
         ROCKET_ASSERT(!*qbkt);
@@ -172,7 +171,7 @@ class Reference_Dictionary
     size() const noexcept
       { return this->m_size;  }
 
-    Reference_Dictionary&
+    void
     clear() noexcept
       {
         if(this->m_head)
@@ -181,29 +180,28 @@ class Reference_Dictionary
         // Clean invalid data up.
         this->m_head = nullptr;
         this->m_size = 0;
-        return *this;
       }
 
     const Reference*
-    find_opt(const phsh_string& name) const noexcept
+    find_opt(phsh_stringR name) const noexcept
       {
         return this->do_xfind_opt(nullptr, name);
       }
 
     Reference*
-    mut_find_opt(const phsh_string& name) noexcept
+    mut_find_opt(phsh_stringR name) noexcept
       {
         return this->do_xfind_opt(nullptr, name);
       }
 
     const Reference*
-    find_with_hint_opt(size_t& hint, const phsh_string& name) const noexcept
+    find_with_hint_opt(size_t& hint, phsh_stringR name) const noexcept
       {
         return this->do_xfind_opt(&hint, name);
       }
 
     Reference*
-    mut_find_with_hint_opt(size_t& hint, const phsh_string& name) noexcept
+    mut_find_with_hint_opt(size_t& hint, phsh_stringR name) noexcept
       {
         return this->do_xfind_opt(&hint, name);
       }
@@ -220,7 +218,7 @@ class Reference_Dictionary
       }
 
     pair<Reference*, bool>
-    insert(const phsh_string& name)
+    insert(phsh_stringR name)
       {
         // Reserve more room by rehashing if the load factor would
         // exceed 0.5.
@@ -239,7 +237,7 @@ class Reference_Dictionary
       }
 
     bool
-    erase(const phsh_string& name) noexcept
+    erase(phsh_stringR name) noexcept
       {
         // Be advised that `do_xprobe()` shall not be called when the
         // table has not been allocated.
@@ -260,7 +258,9 @@ class Reference_Dictionary
 inline
 void
 swap(Reference_Dictionary& lhs, Reference_Dictionary& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

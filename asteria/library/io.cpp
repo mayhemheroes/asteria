@@ -6,7 +6,6 @@
 #include "../runtime/argument_reader.hpp"
 #include "../runtime/runtime_error.hpp"
 #include "../utils.hpp"
-
 namespace asteria {
 namespace {
 
@@ -76,7 +75,7 @@ do_set_wide(::FILE* fp, const char* mode, int wide)
   }
 
 size_t
-do_write_utf8_common(::FILE* fp, const cow_string& text)
+do_write_utf8_common(::FILE* fp, stringR text)
   {
     size_t ncps = 0;
     size_t off = 0;

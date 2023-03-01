@@ -6,7 +6,6 @@
 
 #include "tinyfmt.hpp"
 #include "tinybuf_file.hpp"
-
 namespace rocket {
 
 template<typename charT, typename traitsT = char_traits<charT>>
@@ -36,21 +35,17 @@ class basic_tinyfmt_file
 
   public:
     basic_tinyfmt_file() noexcept
-      : m_buf()
-      { }
+      : m_buf()  { }
 
     basic_tinyfmt_file(unique_posix_file&& file) noexcept
-      : m_buf(::std::move(file))
-      { }
+      : m_buf(::std::move(file))  { }
 
     basic_tinyfmt_file(handle_type fp, closer_type cl) noexcept
-      : m_buf(fp, cl)
-      { }
+      : m_buf(fp, cl)  { }
 
     explicit
     basic_tinyfmt_file(const char* path, open_mode mode = tinybuf_base::open_write) noexcept
-      : m_buf(path, mode)
-      { }
+      : m_buf(path, mode)  { }
 
     basic_tinyfmt_file&
     swap(basic_tinyfmt_file& other) noexcept(is_nothrow_swappable<tinybuf_type>::value)
@@ -110,26 +105,24 @@ class basic_tinyfmt_file
 template<typename charT, typename traitsT>
 basic_tinyfmt_file<charT, traitsT>::
 ~basic_tinyfmt_file()
-  { }
+  {
+  }
 
 template<typename charT, typename traitsT>
 inline
 void
 swap(basic_tinyfmt_file<charT, traitsT>& lhs, basic_tinyfmt_file<charT, traitsT>& rhs)
   noexcept(noexcept(lhs.swap(rhs)))
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
-extern
-template
-class basic_tinyfmt_file<char>;
+using tinyfmt_file     = basic_tinyfmt_file<char>;
+using wtinyfmt_file    = basic_tinyfmt_file<wchar_t>;
+using u16tinyfmt_file  = basic_tinyfmt_file<char16_t>;
+using u32tinyfmt_file  = basic_tinyfmt_file<char32_t>;
 
-extern
-template
-class basic_tinyfmt_file<wchar_t>;
-
-using tinyfmt_file   = basic_tinyfmt_file<char>;
-using wtinyfmt_file  = basic_tinyfmt_file<wchar_t>;
+extern template class basic_tinyfmt_file<char>;
 
 }  // namespace rocket
-
 #endif

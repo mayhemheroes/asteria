@@ -7,7 +7,6 @@
 #include "../fwd.hpp"
 #include "../value.hpp"
 #include "reference_modifier.hpp"
-
 namespace asteria {
 
 class Reference
@@ -37,8 +36,7 @@ class Reference
     // Constructors and assignment operators
     constexpr
     Reference() noexcept
-      : m_init_index()
-      { }
+      : m_init_index()  { }
 
     Reference(const Reference& other) noexcept
       : m_mods(other.m_mods),
@@ -243,7 +241,7 @@ class Reference
       }
 
     Reference&
-    push_modifier_object_key(const phsh_string& key)
+    push_modifier_object_key(phsh_stringR key)
       {
         Reference_Modifier::S_object_key xmod = { key };
         this->m_mods.emplace_back(::std::move(xmod));
@@ -332,7 +330,9 @@ class Reference
 inline
 void
 swap(Reference& lhs, Reference& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

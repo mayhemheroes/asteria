@@ -6,7 +6,6 @@
 
 #include "unique_handle.hpp"
 #include <dirent.h>  // ::DIR, ::closedir()
-
 namespace rocket {
 
 class posix_dir_closer
@@ -21,13 +20,11 @@ class posix_dir_closer
   public:
     constexpr
     posix_dir_closer() noexcept
-      : m_cl(::closedir)
-      { }
+      : m_cl(::closedir)  { }
 
     constexpr
     posix_dir_closer(closer_type cl) noexcept
-      : m_cl(cl)
-      { }
+      : m_cl(cl)  { }
 
   public:
     constexpr operator
@@ -61,5 +58,4 @@ class posix_dir_closer
 using unique_posix_dir  = unique_handle<::DIR*, posix_dir_closer>;
 
 }  // namespace rocket
-
 #endif

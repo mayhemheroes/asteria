@@ -8,7 +8,6 @@
 #include "../source_location.hpp"
 #include "../../rocket/tinyfmt_str.hpp"
 #include <exception>
-
 namespace asteria {
 
 class Compiler_Error
@@ -94,22 +93,30 @@ class Compiler_Error
 inline
 bool
 operator==(const Compiler_Error& lhs, Compiler_Status rhs) noexcept
-  { return lhs.status() == rhs;  }
+  {
+    return lhs.status() == rhs;
+  }
 
 inline
 bool
 operator!=(const Compiler_Error& lhs, Compiler_Status rhs) noexcept
-  { return lhs.status() != rhs;  }
+  {
+    return lhs.status() != rhs;
+  }
 
 inline
 bool
 operator==(Compiler_Status lhs, const Compiler_Error& rhs) noexcept
-  { return lhs == rhs.status();  }
+  {
+    return lhs == rhs.status();
+  }
 
 inline
 bool
 operator!=(Compiler_Status lhs, const Compiler_Error& rhs) noexcept
-  { return lhs != rhs.status();  }
+  {
+    return lhs != rhs.status();
+  }
 
 }  // namespace asteria
 #endif

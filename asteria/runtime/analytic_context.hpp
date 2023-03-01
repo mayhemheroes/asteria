@@ -6,7 +6,6 @@
 
 #include "../fwd.hpp"
 #include "abstract_context.hpp"
-
 namespace asteria {
 
 class Analytic_Context
@@ -20,8 +19,7 @@ class Analytic_Context
     // Its parent context shall outlast itself.
     explicit
     Analytic_Context(M_plain, Abstract_Context& parent)
-      : m_parent_opt(&parent)
-      { }
+      : m_parent_opt(&parent)  { }
 
     // A function context may have a parent.
     // Names found in ancestor contexts will be bound into the
@@ -40,7 +38,7 @@ class Analytic_Context
       { return this->get_parent_opt();  }
 
     Reference*
-    do_create_lazy_reference_opt(Reference*, const phsh_string&) const override
+    do_create_lazy_reference_opt(Reference*, phsh_stringR) const override
       { return nullptr;  }
 
   public:

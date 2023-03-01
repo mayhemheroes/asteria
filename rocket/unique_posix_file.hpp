@@ -6,7 +6,6 @@
 
 #include "unique_handle.hpp"
 #include <stdio.h>  // ::FILE, ::fclose()
-
 namespace rocket {
 
 class posix_file_closer
@@ -21,13 +20,11 @@ class posix_file_closer
   public:
     constexpr
     posix_file_closer() noexcept
-      : m_cl(::fclose)
-      { }
+      : m_cl(::fclose)  { }
 
     constexpr
     posix_file_closer(closer_type cl) noexcept
-      : m_cl(cl)
-      { }
+      : m_cl(cl)  { }
 
   public:
     constexpr operator
@@ -65,5 +62,4 @@ class posix_file_closer
 using unique_posix_file  = unique_handle<::FILE*, posix_file_closer>;
 
 }  // namespace rocket
-
 #endif

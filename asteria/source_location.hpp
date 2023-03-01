@@ -5,7 +5,6 @@
 #define ASTERIA_SOURCE_LOCATION_
 
 #include "fwd.hpp"
-
 namespace asteria {
 
 class Source_Location
@@ -17,12 +16,10 @@ class Source_Location
 
   public:
     Source_Location() noexcept
-      : m_file(sref("[unknown]")), m_line(-1), m_column(-1)
-      { }
+      : m_file(sref("[unknown]")), m_line(-1), m_column(-1)  { }
 
-    Source_Location(const cow_string& xfile, int xline, int xcolumn) noexcept
-      : m_file(xfile), m_line(xline), m_column(xcolumn)
-      { }
+    Source_Location(stringR xfile, int xline, int xcolumn) noexcept
+      : m_file(xfile), m_line(xline), m_column(xcolumn)  { }
 
     Source_Location&
     swap(Source_Location& other) noexcept
@@ -57,12 +54,16 @@ class Source_Location
 inline
 void
 swap(Source_Location& lhs, Source_Location& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 inline
 tinyfmt&
 operator<<(tinyfmt& fmt, const Source_Location& sloc)
-  { return sloc.print(fmt);  }
+  {
+    return sloc.print(fmt);
+  }
 
 }  // namespace asteria
 #endif

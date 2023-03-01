@@ -4,7 +4,6 @@
 #ifndef ASTERIA_LLDS_REFERENCE_DICTIONARY_
 #  error Please include <asteria/llds/reference_dictionary.hpp> instead.
 #endif
-
 namespace asteria {
 namespace details_reference_dictionary {
 
@@ -32,7 +31,7 @@ struct Bucket
 
 inline
 bool
-do_compare_eq(const phsh_string& lhs, const phsh_string& rhs) noexcept
+do_compare_eq(phsh_stringR lhs, phsh_stringR rhs) noexcept
   {
     // Generally, we expect the strings to compare equal.
     return ROCKET_EXPECT((((uintptr_t) lhs.c_str() ^ (uintptr_t) rhs.c_str())

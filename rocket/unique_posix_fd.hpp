@@ -6,7 +6,6 @@
 
 #include "unique_handle.hpp"
 #include <unistd.h>  // ::close()
-
 namespace rocket {
 
 class posix_fd_closer
@@ -21,13 +20,11 @@ class posix_fd_closer
   public:
     constexpr
     posix_fd_closer() noexcept
-      : m_cl(::close)
-      { }
+      : m_cl(::close)  { }
 
     constexpr
     posix_fd_closer(closer_type cl) noexcept
-      : m_cl(cl)
-      { }
+      : m_cl(cl)  { }
 
   public:
     constexpr operator
@@ -61,5 +58,4 @@ class posix_fd_closer
 using unique_posix_fd  = unique_handle<int, posix_fd_closer>;
 
 }  // namespace rocket
-
 #endif

@@ -3,8 +3,6 @@
 
 #ifndef ROCKET_ASSERT_
 #define ROCKET_ASSERT_
-
-
 namespace rocket {
 
 // `report_assertion_failure()` is always provided even when assertions are disabled.
@@ -24,5 +22,4 @@ report_assertion_failure(const char* expr, const char* file, long line, const ch
 #define ROCKET_ASSERT_MSG(expr, mt)     ROCKET_XASSERT_(expr, #expr, mt)
 
 }  // namespace rocket
-
 #endif

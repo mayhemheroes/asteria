@@ -8,7 +8,6 @@
 #include "assert.hpp"
 #include <atomic>  // std::atomic<>
 #include <exception>  // std::terminate()
-
 namespace rocket {
 
 template<typename valueT = long>
@@ -29,18 +28,15 @@ class reference_counter
   public:
     constexpr
     reference_counter() noexcept
-      : m_nref(1)
-      { }
+      : m_nref(1)  { }
 
     explicit constexpr
     reference_counter(value_type nref) noexcept
-      : m_nref(nref)
-      { }
+      : m_nref(nref)  { }
 
     constexpr
     reference_counter(const reference_counter&) noexcept
-      : reference_counter()
-      { }
+      : reference_counter()  { }
 
     reference_counter&
     operator=(const reference_counter&) & noexcept
@@ -122,5 +118,4 @@ template
 class reference_counter<long>;
 
 }  // namespace rocket
-
 #endif

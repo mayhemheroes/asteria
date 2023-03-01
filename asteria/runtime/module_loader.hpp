@@ -6,7 +6,6 @@
 
 #include "../fwd.hpp"
 #include "../../rocket/tinybuf_file.hpp"
-
 namespace asteria {
 
 class Module_Loader final
@@ -89,7 +88,7 @@ class Module_Loader::Unique_Stream
 
     explicit operator
     bool() const noexcept
-      { return bool(this->m_strm);  }
+      { return this->m_strm != nullptr;  }
 
     ::rocket::tinybuf_file&
     get() const noexcept
@@ -117,7 +116,9 @@ class Module_Loader::Unique_Stream
 inline
 void
 swap(Module_Loader::Unique_Stream& lhs, Module_Loader::Unique_Stream& rhs) noexcept
-  { lhs.swap(rhs);  }
+  {
+    lhs.swap(rhs);
+  }
 
 }  // namespace asteria
 #endif

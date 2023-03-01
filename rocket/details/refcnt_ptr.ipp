@@ -4,7 +4,6 @@
 #ifndef ROCKET_REFCNT_PTR_
 #  error Please include <rocket/refcnt_ptr.hpp> instead.
 #endif
-
 namespace details_refcnt_ptr {
 
 class refcnt_cJveMKH5bI7L
@@ -34,7 +33,9 @@ template<typename elementT, typename deleterT>
 constexpr
 deleterT
 copy_deleter(const refcnt_base<elementT, deleterT>& base) noexcept
-  { return base.as_deleter();  }
+  {
+    return base.as_deleter();
+  }
 
 template<typename elementT>
 class stored_pointer
@@ -49,13 +50,11 @@ class stored_pointer
   public:
     constexpr
     stored_pointer() noexcept
-      : m_ptr()
-      { }
+      : m_ptr()  { }
 
     explicit constexpr
     stored_pointer(pointer ptr) noexcept
-      : m_ptr(::std::move(ptr))
-      { }
+      : m_ptr(::std::move(ptr))  { }
 
     ~stored_pointer()
       { this->reset(nullptr);  }

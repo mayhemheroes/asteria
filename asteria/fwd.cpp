@@ -5,7 +5,6 @@
 #include "fwd.hpp"
 #include "runtime/reference.hpp"
 #include "utils.hpp"
-
 namespace asteria {
 
 void
@@ -178,14 +177,14 @@ describe_compiler_status(Compiler_Status status) noexcept
       case compiler_status_escape_utf_code_point_invalid:
         return "UTF code point value invalid";
 
-      case compiler_status_numeric_literal_invalid:
-        return "numeric literal invalid";
+      case compiler_status_reserved_1012:
+        return "";
 
       case compiler_status_integer_literal_overflow:
         return "integer literal too large";
 
       case compiler_status_integer_literal_inexact:
-        return "fraction as an integer literal";
+        return "integer literal yielding a fraction";
 
       case compiler_status_real_literal_overflow:
         return "real literal too large";

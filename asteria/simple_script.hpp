@@ -6,7 +6,6 @@
 
 #include "fwd.hpp"
 #include "runtime/global_context.hpp"
-
 namespace asteria {
 
 class Simple_Script
@@ -21,8 +20,7 @@ class Simple_Script
   public:
     explicit
     Simple_Script(API_Version version = api_version_latest)
-      : m_global(version)
-      { }
+      : m_global(version)  { }
 
   public:
     const Compiler_Options&
@@ -49,41 +47,38 @@ class Simple_Script
     const cow_function&() const noexcept
       { return this->m_func;  }
 
-    Simple_Script&
+    void
     reset() noexcept
-      {
-        this->m_func.reset();
-        return *this;
-      }
+      { this->m_func.reset();  }
 
     // Load something. Calling these functions directly is not recommended.
-    Simple_Script&
-    reload(const cow_string& name, Statement_Sequence&& stmtq);
+    void
+    reload(stringR name, Statement_Sequence&& stmtq);
 
-    Simple_Script&
-    reload(const cow_string& name, Token_Stream&& tstrm);
+    void
+    reload(stringR name, Token_Stream&& tstrm);
 
-    Simple_Script&
-    reload(const cow_string& name, int line, tinybuf&& cbuf);
+    void
+    reload(stringR name, int line, tinybuf&& cbuf);
 
     // Load a script.
-    Simple_Script&
-    reload_string(const cow_string& name, int line, const cow_string& code);
+    void
+    reload_string(stringR name, int line, stringR code);
 
-    Simple_Script&
-    reload_string(const cow_string& name, const cow_string& code);
+    void
+    reload_string(stringR name, stringR code);
 
-    Simple_Script&
+    void
     reload_stdin(int line);
 
-    Simple_Script&
+    void
     reload_stdin();
 
-    Simple_Script&
+    void
     reload_file(const char* path);
 
-    Simple_Script&
-    reload_file(const cow_string& path);
+    void
+    reload_file(stringR path);
 
     // Execute the script that has been loaded.
     Reference

@@ -6,7 +6,6 @@
 
 #include "fwd.hpp"
 #include "assert.hpp"
-
 namespace rocket {
 
 template<typename bucketT>
@@ -51,5 +50,4 @@ linear_probe(bucketT* begin, bucketT* to, bucketT* from, bucketT* end, predT&& p
   }
 
 }  // namespace rocket
-
 #endif
