@@ -1,0 +1,4 @@
+var a = [1, "two", 3.5, true, null];
+for(each k, v -> a) std.io.putfln("$1 -> $2", k, v);
+var o = { name: "asteria", ver: 2 };
+std.io.putln(std.json.format(o));
